@@ -1,0 +1,8 @@
+# Env files (each project keeps a committed .env.example)
+.env
+**/.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
