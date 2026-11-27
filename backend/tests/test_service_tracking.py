@@ -232,3 +232,10 @@ async def test_api_search_a_requests_calls_in_order(api, db_session_factory):
     detail = await api.get(f"{URL}/{records[1]['id']}")
     assert detail.json()["record"]["error_type"] == "IntegrityError"
     assert (await api.get(f"{URL}/{uuid.uuid4()}")).status_code == 404
+
+
+@pytest.fixture
+def api(api, admin_headers):
+    """The log APIs need *_logs:read: call them as an admin."""
+    api.headers.update(admin_headers)
+    return api

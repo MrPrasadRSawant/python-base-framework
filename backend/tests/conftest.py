@@ -6,6 +6,7 @@ import os
 # Must be set before the app (and its settings) are imported.
 os.environ["LOG_TO_FILE"] = "false"
 os.environ["DEBUG"] = "false"
+os.environ["ENVIRONMENT"] = "test"
 # Tests never touch the real DB; the exception_log handler is tested with a fake sink.
 os.environ["EXCEPTION_LOG_DB_ENABLED"] = "false"
 os.environ["REQUEST_LOG_DB_ENABLED"] = "false"
@@ -13,6 +14,10 @@ os.environ["SERVICE_CALL_LOG_DB_ENABLED"] = "false"
 os.environ["EXCEPTION_LOG_API_ENABLED"] = "true"  # so their endpoints can be tested
 os.environ["REQUEST_LOG_API_ENABLED"] = "true"
 os.environ["SERVICE_CALL_LOG_API_ENABLED"] = "true"
+os.environ["JWT_SECRET_KEY"] = "test-secret-key-that-is-at-least-32-characters"
+os.environ["AUTH_SELF_REGISTRATION_ENABLED"] = "true"
+os.environ["REFRESH_COOKIE_SECURE"] = "false"  # test client talks plain http
+os.environ["RATE_LIMIT_ENABLED"] = "false"  # tests share one IP; test_rate_limit.py turns it on
 
 import pytest  # noqa: E402
 from fastapi import APIRouter  # noqa: E402
@@ -177,3 +182,19 @@ def request_rows():
     root.addHandler(handler)
     yield sink.rows
     root.removeHandler(handler)
+
+
+# ---- authentication ---------------------------------------------------------
+ADMIN_TEST_USER_ID = "00000000-0000-7000-8000-00000000a0a0"
+
+
+@pytest.fixture
+def admin_headers() -> dict[str, str]:
+    """Bearer header for a user holding every permission in the catalog."""
+    from app.core.security import create_access_token
+    from app.core.security.permissions import Perm
+
+    token, _ = create_access_token(
+        subject=ADMIN_TEST_USER_ID, token_type="user", permissions=list(Perm)
+    )
+    return {"Authorization": f"Bearer {token}"}

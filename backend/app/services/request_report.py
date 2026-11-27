@@ -8,7 +8,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.service_tracking import track_service
@@ -172,7 +172,15 @@ class RequestReportService:
     @track_service
     async def list_reports(self, search: SearchRequest) -> SearchResult:
         """Same filters/sort/paging as POST /requests/search; records become summaries."""
-        result = await RequestLogService(self.db).search(search)
+        request_logs = RequestLogService(self.db)
+        result = await request_logs.search(search)
+        if search.include_total:
+            matching, _ = request_logs.build_query(search)
+            matching_requests = matching.subquery()
+            average = await self.db.scalar(
+                select(func.avg(matching_requests.c.duration_ms)).select_from(matching_requests)
+            )
+            result.average_duration_ms = float(average) if average is not None else 0.0
         ids = [r.id for r in result.records]
         calls_by, exceptions_by = await self._related(ids) if ids else ({}, {})
         result.records = [

@@ -35,6 +35,9 @@ class ListMetadata(ResponseMetadata):
     total_count: int | None = Field(
         description="Total matching records (null when include_total=false)"
     )
+    average_duration_ms: float | None = Field(
+        None, description="Average request duration across all matching records, when available"
+    )
     has_more: bool = Field(description="True if more records exist after this page")
     next_offset: int | None = Field(description="Offset for the next page, null on the last")
     previous_offset: int | None = Field(

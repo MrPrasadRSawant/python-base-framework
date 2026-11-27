@@ -16,4 +16,5 @@ class RequestLogService(BaseService):
     )
     sort_fields = ("started_on", "duration_ms", "status_code", "route")
     search_fields = ("route", "endpoint")
+    search_cast_fields = ("id",)
     default_sort = (("started_on", SortDirection.DESC),)

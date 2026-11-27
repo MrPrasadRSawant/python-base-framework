@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import ColumnElement, String, not_
+from sqlalchemy import Boolean, ColumnElement, String, not_
 from sqlalchemy.orm import InstrumentedAttribute
 
 from app.core.exceptions import UnprocessableEntityError
@@ -20,6 +20,7 @@ class SearchResult:
     offset: int
     has_more: bool
     sort: list[tuple[str, SortDirection]]
+    average_duration_ms: float | None = None
 
 
 def invalid_search(message: str, loc: list[Any]) -> UnprocessableEntityError:
@@ -82,11 +83,20 @@ def filter_condition(
         return column.between(low, high)
 
     value = _coerce(column, flt.value, index)
-    return {
-        FilterOperator.EQ: column == value,
-        FilterOperator.NE: column != value,
-        FilterOperator.GT: column > value,
-        FilterOperator.GTE: column >= value,
-        FilterOperator.LT: column < value,
-        FilterOperator.LTE: column <= value,
-    }[op]
+    if op == FilterOperator.EQ:
+        return column == value
+    if op == FilterOperator.NE:
+        return column != value
+    if isinstance(column.type, Boolean):
+        raise invalid_search(
+            f"'{op}' does not work on boolean fields.", ["body", "filters", index, "op"]
+        )
+    if op == FilterOperator.GT:
+        return column > value
+    if op == FilterOperator.GTE:
+        return column >= value
+    if op == FilterOperator.LT:
+        return column < value
+    if op == FilterOperator.LTE:
+        return column <= value
+    raise invalid_search(f"Unsupported filter operator '{op}'.", ["body", "filters", index, "op"])

@@ -1,8 +1,9 @@
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import computed_field, field_validator
+from pydantic import Field, SecretStr, computed_field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -74,6 +75,48 @@ class Settings(BaseSettings):
     # --- Redaction ---
     REDACT_EXTRA_KEYS: Annotated[list[str], NoDecode] = []
     REDACT_EMAILS: bool = True
+
+    # --- Authentication ---
+    # Required, at least 32 characters. Generate one with:
+    #   python -c "import secrets; print(secrets.token_urlsafe(48))"
+    JWT_SECRET_KEY: SecretStr = Field(min_length=32)
+    JWT_ALGORITHM: Literal["HS256", "HS384", "HS512"] = "HS256"
+    JWT_ISSUER: str = "base-api"
+    ACCESS_TOKEN_TTL_MINUTES: int = Field(15, ge=1)
+    LOGIN_MAX_FAILED: int = Field(5, ge=1)  # failed logins in a row before the lock
+    LOGIN_LOCK_MINUTES: int = Field(15, ge=1)
+    # POST /auth/register open to anyone. Keep false unless the app allows sign-up.
+    AUTH_SELF_REGISTRATION_ENABLED: bool = False
+    # Local development only: create the two documented demo accounts on startup.
+    DEV_SEED_ACCOUNTS: bool = False
+    # Refresh token: opaque, stored hashed, sent as an HttpOnly cookie scoped to /auth.
+    REFRESH_TOKEN_TTL_DAYS: int = Field(7, ge=1)
+    REFRESH_COOKIE_NAME: str = "refresh_token"
+    REFRESH_COOKIE_SECURE: bool = True  # HTTPS only (browsers allow it on http://localhost)
+    REFRESH_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+    # Access tokens issued to API clients (client credentials grant). No refresh token.
+    SERVICE_TOKEN_TTL_MINUTES: int = Field(15, ge=1)
+
+    # --- Rate limiting (per client IP, in memory per worker; "<n>/<second|minute|hour>") ---
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_LOGIN: str = "10/minute"  # /auth/login and /auth/token password grant
+    RATE_LIMIT_REGISTER: str = "5/minute"
+    RATE_LIMIT_REFRESH: str = "30/minute"
+    RATE_LIMIT_TOKEN: str = "60/minute"  # /auth/token client_credentials, per IP
+    RATE_LIMIT_TOKEN_PER_CLIENT: str = "30/minute"  # ... and per client_id
+
+    @field_validator(
+        "RATE_LIMIT_LOGIN",
+        "RATE_LIMIT_REGISTER",
+        "RATE_LIMIT_REFRESH",
+        "RATE_LIMIT_TOKEN",
+        "RATE_LIMIT_TOKEN_PER_CLIENT",
+    )
+    @classmethod
+    def check_rate_rule(cls, value: str) -> str:
+        if not re.fullmatch(r"\s*\d+\s*/\s*(second|minute|hour)\s*", value):
+            raise ValueError("use '<count>/<second|minute|hour>', e.g. '10/minute'")
+        return value
 
     @field_validator(
         "CORS_ORIGINS", "REDACT_EXTRA_KEYS", "REQUEST_LOG_EXCLUDE_PATHS", mode="before"

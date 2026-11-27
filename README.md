@@ -22,15 +22,29 @@ pip install -r requirements.txt
 copy .env.example .env              # then set POSTGRES_* values
 ```
 
-Create the database (once), then run migrations and the server:
+Create the database (once), then run the existing migrations and the server:
 
 ```powershell
 # e.g. in psql:  CREATE DATABASE app_db;
-alembic revision --autogenerate -m "init"
 alembic upgrade head
 fastapi dev app/main.py              # http://localhost:8000  (docs: /docs)
 pytest
 ```
+
+In local development, `.env.example` enables `DEV_SEED_ACCOUNTS=true`. On startup,
+the app creates these accounts if they do not already exist:
+
+| Username | Email | Password | Role |
+|---|---|---|---|
+| `Admin` | `admin@baseframework.com` | `Admin@123` | `admin` (all current permissions) |
+| `Developer` | `developer@baseframework.com` | `Developer@123` | `developer` (read logs; manage role permissions within its own grant scope) |
+
+Sign in with either the username or email. They are separate, case-insensitively
+unique fields. The seed only runs with `ENVIRONMENT=development` and a local
+PostgreSQL host. It leaves existing account passwords and roles unchanged.
+Set `DEV_SEED_ACCOUNTS=false` to disable it. Normal API account creation still
+requires passwords of at least 12 characters; `Admin@123` is a local demo
+credential only.
 
 Structure:
 ```

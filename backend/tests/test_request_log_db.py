@@ -46,8 +46,10 @@ def test_generated_request_id_becomes_the_row_id(client, request_rows):
     assert request_rows[0]["id"] == uuid.UUID(r.headers[HEADER])
 
 
-def test_route_includes_router_prefix(client, request_rows):
-    client.post("/api/v1/exception-logs/search", json={"limit": 0})  # 422, no DB needed
+def test_route_includes_router_prefix(client, request_rows, admin_headers):
+    client.post(  # 422, no DB needed
+        "/api/v1/exception-logs/search", json={"limit": 0}, headers=admin_headers
+    )
     assert request_rows[-1]["route"] == "/api/v1/exception-logs/search"
     assert request_rows[-1]["status_code"] == 422
 
@@ -207,7 +209,8 @@ async def test_report_join_requests_with_service_calls(seed_requests, db_session
 URL = "/api/v1/requests"
 
 
-def test_search_rejects_unknown_and_removed_fields(client):
+def test_search_rejects_unknown_and_removed_fields(client, admin_headers):
+    client.headers.update(admin_headers)
     for field in ("path", "client_ip", "request_id"):
         r = client.post(f"{URL}/search", json={"filters": [{"field": field, "value": "x"}]})
         assert r.status_code == 422, field
@@ -257,3 +260,10 @@ async def test_api_list_search_and_detail_by_request_id(api, seed_requests):
     assert r.status_code == 200 and r.json()["record"]["duration_ms"] == 900.0
     r = await api.get(f"{URL}/{uuid.uuid4()}")
     assert r.status_code == 404 and r.json()["error"]["code"] == "not_found"
+
+
+@pytest.fixture
+def api(api, admin_headers):
+    """The log APIs need *_logs:read: call them as an admin."""
+    api.headers.update(admin_headers)
+    return api
