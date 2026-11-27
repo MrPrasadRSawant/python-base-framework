@@ -14,9 +14,7 @@ from app.core.request_context import (
 
 
 def _headers(scope: dict[str, Any]) -> list[tuple[str, str]]:
-    return [
-        (k.decode("latin-1"), v.decode("latin-1")) for k, v in scope.get("headers") or []
-    ]
+    return [(k.decode("latin-1"), v.decode("latin-1")) for k, v in scope.get("headers") or []]
 
 
 def client_ip(scope: dict[str, Any]) -> str | None:
@@ -27,12 +25,22 @@ def client_ip(scope: dict[str, Any]) -> str | None:
     return client[0] if client else None
 
 
+def _route_template(scope: dict[str, Any]) -> str | None:
+    # FastAPI >= 0.16x mounts included routers, so scope["route"].path lacks the
+    # router prefixes ("/orders/{id}"); the effective route context has the full
+    # template ("/api/v1/orders/{id}"). Fall back for older versions.
+    context = (scope.get("fastapi") or {}).get("effective_route_context")
+    full_path = getattr(context, "path", None)
+    if full_path:
+        return full_path
+    return getattr(scope.get("route"), "path", None)
+
+
 def route_info(scope: dict[str, Any]) -> dict[str, str | None]:
     """Matched route template and endpoint function (set by the router)."""
-    route = scope.get("route")
     endpoint = scope.get("endpoint")
     return {
-        "route": getattr(route, "path", None),
+        "route": _route_template(scope),
         "endpoint": (
             f"{endpoint.__module__}.{endpoint.__qualname__}"
             if endpoint is not None and hasattr(endpoint, "__qualname__")
@@ -77,9 +85,7 @@ def build_request_context(
         "path": scope.get("path"),
         **route_info(scope),
         "client_ip": client_ip(scope),
-        "user_agent": next(
-            (v for k, v in _headers(scope) if k.lower() == "user-agent"), None
-        ),
+        "user_agent": next((v for k, v in _headers(scope) if k.lower() == "user-agent"), None),
     }
     if query_string:
         context["query_params"] = redactor.redact_pairs(

@@ -1,6 +1,6 @@
 """create items and exception_log tables
 
-Revision ID: 40c599941c40
+Revision ID: 01_40c599941c40
 Revises: 
 Create Date: 2026-11-26 23:22:16.899731
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '40c599941c40'
+revision: str = '01_40c599941c40'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

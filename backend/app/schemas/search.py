@@ -1,29 +1,25 @@
-"""Search request payload (POST /<resource>/search).
+"""Search request payload, shared by every POST /<resource>/search endpoint.
 
     {
-      "search": "widget",
+      "search": "timeout",
       "filters": [
-        {"field": "name", "op": "starts_with", "value": "Wid"},
-        {"field": "created_on", "op": "gte", "value": "2026-01-01T00:00:00Z"},
-        {"field": "created_by", "op": "in", "value": ["system", "alice"]}
+        {"field": "status_code", "op": "gte", "value": 500},
+        {"field": "occurred_on", "op": "between", "value": ["2026-11-01", "2026-11-30"]}
       ],
-      "sort": [{"field": "created_on", "direction": "desc"}],
+      "sort": [{"field": "occurred_on", "direction": "desc"}],
       "limit": 20,
-      "offset": 0,
-      "include_total": true,
-      "include_deleted": false
+      "offset": 0
     }
 
-Filters are combined with AND; ``search`` is an OR across the resource's
-searchable text fields. Field names are restricted per resource: each one
-gets its own model from ``build_search_request``, with the allowed names as
-enums, so they also appear in the OpenAPI docs.
+Filters are combined with AND; ``search`` is a case-insensitive OR across the
+table's ``search_fields``. Which fields can be filtered/sorted is decided by
+each service (``filter_fields`` / ``sort_fields``); others get a 422.
 """
 
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.config import settings
 
@@ -44,7 +40,6 @@ class FilterOperator(StrEnum):
     IS_NULL = "is_null"  # value = true / false
 
 
-LIST_OPERATORS = {FilterOperator.IN, FilterOperator.NOT_IN}
 TEXT_OPERATORS = {FilterOperator.CONTAINS, FilterOperator.STARTS_WITH, FilterOperator.ENDS_WITH}
 
 
@@ -63,7 +58,7 @@ class FilterCondition(BaseModel):
     @model_validator(mode="after")
     def check_value_shape(self) -> "FilterCondition":
         op, value = self.op, self.value
-        if op in LIST_OPERATORS:
+        if op in (FilterOperator.IN, FilterOperator.NOT_IN):
             if not isinstance(value, list) or not value:
                 raise ValueError(f"'{op}' needs a non-empty list value")
             if len(value) > settings.SEARCH_MAX_IN_VALUES:
@@ -102,28 +97,3 @@ class SearchRequest(BaseModel):
     offset: int = Field(0, ge=0)
     include_total: bool = Field(True, description="Run COUNT(*); disable for speed on big tables")
     include_deleted: bool = Field(False, description="Include soft-deleted records")
-
-
-def build_search_request(
-    name: str, *, filterable: tuple[str, ...], sortable: tuple[str, ...]
-) -> type[SearchRequest]:
-    """Create a SearchRequest subclass whose field names are limited to the allow-lists."""
-    filter_model = create_model(
-        f"{name}Filter",
-        __base__=FilterCondition,
-        field=(Literal[filterable], ...),  # type: ignore[valid-type]
-    )
-    sort_model = create_model(
-        f"{name}Sort",
-        __base__=SortField,
-        field=(Literal[sortable], ...),  # type: ignore[valid-type]
-    )
-    return create_model(
-        f"{name}SearchRequest",
-        __base__=SearchRequest,
-        filters=(
-            list[filter_model],  # type: ignore[valid-type]
-            Field(default_factory=list, max_length=settings.SEARCH_MAX_FILTERS),
-        ),
-        sort=(list[sort_model], Field(default_factory=list, max_length=5)),  # type: ignore[valid-type]
-    )

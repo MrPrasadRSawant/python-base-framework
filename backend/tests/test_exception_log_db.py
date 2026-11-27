@@ -2,8 +2,8 @@ import asyncio
 import logging
 
 from app.core.config import settings
+from app.core.logging.db_sink import DBLogSink
 from app.models import ExceptionLog
-from app.services.exception_log_sink import ExceptionLogSink
 
 HEADER = settings.REQUEST_ID_HEADER
 
@@ -20,7 +20,6 @@ def test_unhandled_exception_becomes_one_row(client, db_rows):
     assert row["level"] == "ERROR"
     assert row["route"] == "/_test/boom"
     assert row["endpoint"].endswith(".boom")
-    assert row["user_agent"] == "pytest-ua"
     assert row["created_by"] == "system"
     assert row["occurred_on"].tzinfo is not None
     assert "Traceback" in row["traceback"]
@@ -44,18 +43,34 @@ def test_client_errors_are_stored_without_traceback(client, db_rows):
     assert row["request_id"] == response.headers[HEADER]
 
 
-def test_stored_request_data_is_redacted(client, db_rows):
+USER_DATA_COLUMNS = {"query_params", "request_headers", "request_body", "client_ip", "user_agent"}
+
+
+def test_no_user_data_columns_on_table():
+    assert not USER_DATA_COLUMNS & set(ExceptionLog.__table__.columns.keys())
+    assert not {"deleted_by", "deleted_on"} & set(ExceptionLog.__table__.columns.keys())
+
+
+def test_user_supplied_data_is_not_stored(client, db_rows):
     client.post(
         "/_test/login",
-        json={"username": "bob", "password": "a-very-long-password"},
-        headers={"Authorization": "Bearer abc.def.ghi"},
-        params={"token": "qs-secret"},
+        json={"username": "bob-the-user", "password": "a-very-long-password"},
+        headers={"User-Agent": "pytest-ua", "X-Forwarded-For": "203.0.113.7"},
+        params={"email": "bob@example.com"},
     )
     row = db_rows[-1]
-    assert row["request_body"]["content"]["password"] == "[REDACTED]"
-    assert row["request_headers"]["authorization"] == "[REDACTED]"
-    assert row["query_params"]["token"] == "[REDACTED]"
-    assert "a-very-long-password" not in str(row)
+    assert not USER_DATA_COLUMNS & set(row)
+    stored = str(row)
+    for user_value in ("a-very-long-password", "bob@example.com", "pytest-ua", "203.0.113.7"):
+        assert user_value not in stored
+
+
+def test_validation_details_keep_location_but_drop_input(client, db_rows):
+    client.post("/_test/login", json={"username": "carol", "password": "short-pw"})
+    detail = db_rows[-1]["details"][0]
+    assert detail["loc"] == ["body", "password"]
+    assert detail["type"] == "string_too_short"
+    assert "input" not in detail
 
 
 def test_min_status_filters_client_errors(client, db_rows):
@@ -82,7 +97,7 @@ def test_logger_exception_outside_handlers_is_stored(db_rows):
 
 
 def test_sink_failures_are_never_persisted(db_rows):
-    logging.getLogger("app.exception_log_sink").error("db down", exc_info=RuntimeError("x"))
+    logging.getLogger("app.db_log_sink").error("db down", exc_info=RuntimeError("x"))
     assert db_rows == []
 
 
@@ -94,7 +109,7 @@ def test_sink_batches_writes_and_flushes_on_stop():
         written.append(list(rows))
 
     async def scenario():
-        sink = ExceptionLogSink(writer, batch_size=3, flush_interval=0.05)
+        sink = DBLogSink("test", writer, batch_size=3, flush_interval=0.05)
         await sink.start()
         for i in range(7):
             sink.enqueue({"n": i})
@@ -116,7 +131,7 @@ def test_sink_retries_rows_individually_and_never_raises():
         stored.extend(rows)
 
     async def scenario():
-        sink = ExceptionLogSink(writer, batch_size=10, flush_interval=0.05)
+        sink = DBLogSink("test", writer, batch_size=10, flush_interval=0.05)
         await sink.start()
         sink.enqueue({"n": 1})
         sink.enqueue({"n": 2, "bad": True})
@@ -130,7 +145,7 @@ def test_sink_retries_rows_individually_and_never_raises():
 
 
 def test_sink_drops_when_full_or_not_started():
-    sink = ExceptionLogSink()
+    sink = DBLogSink("test", writer=None)
     sink.enqueue({"n": 1})  # not started
     assert sink.dropped == 1
 
@@ -140,7 +155,7 @@ def test_sink_drops_when_full_or_not_started():
         async def slow_writer(rows):
             await gate.wait()
 
-        s = ExceptionLogSink(slow_writer, max_queue=2, batch_size=1, flush_interval=0.01)
+        s = DBLogSink("test", slow_writer, max_queue=2, batch_size=1, flush_interval=0.01)
         await s.start()
         for i in range(10):
             s.enqueue({"n": i})
@@ -166,3 +181,17 @@ def test_every_table_has_the_common_columns():
         assert cols["created_on"].type.timezone and not cols["created_on"].nullable
         assert cols["updated_on"].nullable
         assert not cols["is_deleted"].nullable
+
+
+def test_create_schema_rejects_unknown_fields_and_validates_lengths():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.schemas.exception_log import ExceptionLogCreate
+
+    base = {"occurred_on": "2026-11-27T10:00:00Z", "level": "ERROR", "logger": "x", "message": "m"}
+    assert ExceptionLogCreate(**base).created_by == "system"
+    with pytest.raises(ValidationError):
+        ExceptionLogCreate(**base, request_body={"password": "x"})  # extra="forbid"
+    with pytest.raises(ValidationError):
+        ExceptionLogCreate(**{**base, "level": "X" * 21})

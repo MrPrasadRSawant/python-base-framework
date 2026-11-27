@@ -1,6 +1,6 @@
-"""Non-blocking, batched writer for the exception_log table.
+"""Non-blocking, batched writers for the log tables (exception_log, request_logs).
 
-Requests never wait on the database to record an error, and a database
+Requests never wait on the database to record a log row, and a database
 outage never breaks a request:
 
     logging handler --enqueue()--> bounded asyncio.Queue --worker--> INSERT (batched)
@@ -10,7 +10,7 @@ outage never breaks a request:
 * When the queue is full, rows are dropped and counted (and a warning goes to
   the log files) instead of piling up in memory.
 * Failed batches are retried one row at a time, so one bad row doesn't sink
-  the rest. Failures are written to the log files only, never back to this
+  the rest. Failures are written to the log files only, never back to a
   sink, which avoids an infinite loop when the database itself is down.
 * ``stop`` flushes whatever is queued before shutdown.
 """
@@ -20,32 +20,27 @@ import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
-Row = dict[str, Any]
-Writer = Callable[[Sequence[Row]], Awaitable[None]]
+Writer = Callable[[Sequence[Any]], Awaitable[None]]
 
-# Records from this logger are never persisted (see ExceptionLogDBHandler).
-SINK_LOGGER_NAME = "app.exception_log_sink"
+# Records from this logger are never persisted (loop guard in the DB handlers).
+SINK_LOGGER_NAME = "app.db_log_sink"
 logger = logging.getLogger(SINK_LOGGER_NAME)
 
 _STOP = object()
 
 
-async def _default_writer(rows: Sequence[Row]) -> None:
-    from app.repositories.exception_log import insert_exception_logs
-
-    await insert_exception_logs(rows)
-
-
-class ExceptionLogSink:
+class DBLogSink:
     def __init__(
         self,
-        writer: Writer | None = None,
+        name: str,
+        writer: Writer,
         *,
         max_queue: int = 10_000,
         batch_size: int = 50,
         flush_interval: float = 1.0,
     ) -> None:
-        self._writer = writer or _default_writer
+        self.name = name
+        self._writer = writer
         self.max_queue = max_queue
         self.batch_size = batch_size
         self.flush_interval = flush_interval
@@ -66,8 +61,8 @@ class ExceptionLogSink:
             return
         self._loop = asyncio.get_running_loop()
         self._queue = asyncio.Queue(maxsize=self.max_queue)
-        self._task = asyncio.create_task(self._run(), name="exception-log-sink")
-        logger.info("Exception log sink started")
+        self._task = asyncio.create_task(self._run(), name=f"{self.name}-sink")
+        logger.info("%s sink started", self.name)
 
     async def stop(self, timeout: float = 5.0) -> None:
         if not self.running:
@@ -78,9 +73,10 @@ class ExceptionLogSink:
             await asyncio.wait_for(self._task, timeout)
         except TimeoutError:
             self._task.cancel()
-            logger.warning("Exception log sink did not flush within %.1fs", timeout)
+            logger.warning("%s sink did not flush within %.1fs", self.name, timeout)
         logger.info(
-            "Exception log sink stopped (written=%d failed=%d dropped=%d)",
+            "%s sink stopped (written=%d failed=%d dropped=%d)",
+            self.name,
             self.written,
             self.failed,
             self.dropped,
@@ -90,7 +86,7 @@ class ExceptionLogSink:
         self._loop = None
 
     # -------------------------------------------------------------- producer
-    def enqueue(self, row: Row) -> None:
+    def enqueue(self, row: Any) -> None:
         loop = self._loop
         if loop is None or not self.running:
             self.dropped += 1
@@ -104,7 +100,7 @@ class ExceptionLogSink:
         else:  # called from a worker thread
             loop.call_soon_threadsafe(self._put, row)
 
-    def _put(self, row: Row) -> None:
+    def _put(self, row: Any) -> None:
         if self._queue is None:
             self.dropped += 1
             return
@@ -113,9 +109,7 @@ class ExceptionLogSink:
         except asyncio.QueueFull:
             self.dropped += 1
             if self.dropped % 100 == 1:
-                logger.warning(
-                    "Exception log queue full; dropped %d row(s) so far", self.dropped
-                )
+                logger.warning("%s queue full; dropped %d row(s)", self.name, self.dropped)
 
     # -------------------------------------------------------------- consumer
     async def _run(self) -> None:
@@ -126,7 +120,7 @@ class ExceptionLogSink:
             first = await queue.get()
             if first is _STOP:
                 break
-            batch: list[Row] = [first]
+            batch: list[Any] = [first]
             deadline = asyncio.get_running_loop().time() + self.flush_interval
             while len(batch) < self.batch_size:
                 remaining = deadline - asyncio.get_running_loop().time()
@@ -151,7 +145,7 @@ class ExceptionLogSink:
         for start in range(0, len(leftovers), self.batch_size):
             await self._write(leftovers[start : start + self.batch_size])
 
-    async def _write(self, batch: list[Row]) -> None:
+    async def _write(self, batch: list[Any]) -> None:
         try:
             await self._writer(batch)
             self.written += len(batch)
@@ -159,7 +153,7 @@ class ExceptionLogSink:
         except Exception:
             if len(batch) == 1:
                 self.failed += 1
-                logger.warning("Failed to persist exception log row", exc_info=True)
+                logger.warning("Failed to persist %s row", self.name, exc_info=True)
                 return
         # Batch failed: retry row by row so one bad row doesn't lose the others.
         for row in batch:
@@ -168,7 +162,29 @@ class ExceptionLogSink:
                 self.written += 1
             except Exception:
                 self.failed += 1
-                logger.warning("Failed to persist exception log row", exc_info=True)
+                logger.warning("Failed to persist %s row", self.name, exc_info=True)
 
 
-exception_log_sink = ExceptionLogSink()
+# --------------------------------------------------------------------- writers
+# Lazy imports avoid a cycle (logging is set up before the DB layer loads).
+# Each batch uses its own session: the request's may have been rolled back.
+
+
+async def _write_exception_logs(rows: Sequence[Any]) -> None:
+    from app.db.session import SessionLocal
+    from app.services.exception_log import ExceptionLogService
+
+    async with SessionLocal() as session:
+        await ExceptionLogService(session).create_many(list(rows))
+
+
+async def _write_request_logs(rows: Sequence[Any]) -> None:
+    from app.db.session import SessionLocal
+    from app.services.request_log import RequestLogService
+
+    async with SessionLocal() as session:
+        await RequestLogService(session).create_many(list(rows))
+
+
+exception_log_sink = DBLogSink("exception_log", _write_exception_logs)
+request_log_sink = DBLogSink("request_logs", _write_request_logs)

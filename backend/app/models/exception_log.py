@@ -10,7 +10,12 @@ from app.db.mixins import AuditMixin
 
 
 class ExceptionLog(AuditMixin, Base):
-    """One row per exception. Every value is redacted before insert."""
+    """One row per exception.
+
+    Stores only technical data about the failure. Nothing the user sent
+    (body, query string, headers) and nothing identifying the user's device
+    (IP address, user agent). Use ``request_id`` to correlate with the log files.
+    """
 
     __tablename__ = "exception_log"
 
@@ -31,12 +36,8 @@ class ExceptionLog(AuditMixin, Base):
     path: Mapped[str | None] = mapped_column(String(2048))
     route: Mapped[str | None] = mapped_column(String(512))
     endpoint: Mapped[str | None] = mapped_column(String(512))
-    client_ip: Mapped[str | None] = mapped_column(String(64))
-    user_agent: Mapped[str | None] = mapped_column(String(512))
 
-    query_params: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    request_headers: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    request_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # Error context, e.g. {"order_id": ...} or validation errors (loc/msg/type, no input).
     details: Mapped[Any | None] = mapped_column(JSONB)
 
     environment: Mapped[str | None] = mapped_column(String(50))

@@ -4,7 +4,7 @@ Raise these from endpoints/services instead of ``HTTPException``: each one
 carries an HTTP status, a stable machine-readable ``error_code`` and optional
 ``details``, and is logged + rendered consistently by the exception handlers.
 
-    raise NotFoundError("Item not found", details={"item_id": item_id})
+    raise NotFoundError("Order not found", details={"order_id": order_id})
 """
 
 from typing import Any

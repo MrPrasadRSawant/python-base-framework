@@ -1,6 +1,8 @@
 import asyncio
+import re
 from logging.config import fileConfig
 
+from alembic.script import ScriptDirectory
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
@@ -34,6 +36,32 @@ target_metadata = Base.metadata
 # ... etc.
 
 
+SEQUENCE_WIDTH = 2  # 01, 02, ... (widen to 3 before passing 99 to keep files sorted)
+_SEQUENCE_RE = re.compile(r"^(\d+)_")
+
+
+def _next_sequence() -> int:
+    script = ScriptDirectory.from_config(config)
+    numbers = [
+        int(match.group(1))
+        for rev in script.walk_revisions()
+        if (match := _SEQUENCE_RE.match(rev.revision))
+    ]
+    return max(numbers, default=0) + 1
+
+
+def add_sequence_prefix(context, revision, directives) -> None:
+    """Prefix new revision ids with a sequence: 01_40c599941c40, 02_..., ...
+
+    The file name starts with the revision id, so files sort in apply order.
+    An explicit ``alembic revision --rev-id <id>`` is left untouched.
+    """
+    if not directives or getattr(config.cmd_opts, "rev_id", None):
+        return
+    script = directives[0]
+    script.rev_id = f"{_next_sequence():0{SEQUENCE_WIDTH}d}_{script.rev_id}"
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -52,6 +80,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        process_revision_directives=add_sequence_prefix,
     )
 
     with context.begin_transaction():
@@ -59,7 +88,11 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        process_revision_directives=add_sequence_prefix,
+    )
 
     with context.begin_transaction():
         context.run_migrations()

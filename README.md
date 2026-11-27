@@ -40,12 +40,109 @@ app/
   db/base.py            SQLAlchemy declarative Base
   db/session.py         Async engine + get_db dependency
   models/               ORM models (register new ones in models/__init__.py)
-  schemas/              Pydantic request/response models
+  schemas/              <Entity>Create / <Entity>Update / <Entity>Response per table
+                        (base.py: CreateSchema / UpdateSchema / ResponseSchema)
+  services/             one service class per table: its database operations
+                        (base.py: BaseService with get / create / create_many /
+                        update / delete / search, shared by all)
   api/v1/router.py      Version-1 router
-  api/v1/endpoints/     health.py, items.py (example CRUD)
-alembic/                Migrations (DB URL read from .env)
+  api/v1/endpoints/     business logic; calls services, builds responses
+alembic/                Migrations (DB URL read from .env); files are numbered
+                        01_<hash>_<slug>.py, 02_..., assigned automatically by
+                        `alembic revision` (see add_sequence_prefix in env.py)
 tests/
 ```
+
+Request flow: **schema** (validates input) → **endpoint** (business logic: decide,
+raise errors, build the response) → **service** (database operations for one
+table) → **model**.
+
+### Adding a table: the standard pattern
+
+Schema names say what they are for:
+
+| Schema | Purpose | Inherits |
+|---|---|---|
+| `<Entity>Create` | POST body | `CreateSchema`: unknown fields rejected, strings trimmed |
+| `<Entity>Update` | PATCH body, every field optional; only sent fields change | `UpdateSchema` |
+| `<Entity>Response` | one record in any response | `ResponseSchema`: id + common columns |
+
+POST `/search` uses the shared `SearchRequest` (`app/schemas/search.py`) for every table.
+Responses are always wrapped: `RecordResponse[<Entity>Response]` for one record,
+`ListResponse[<Entity>Response]` for lists.
+
+Services inherit `BaseService` and only declare the model and which fields may be
+used. Every service then has the same methods:
+
+| Method | Does |
+|---|---|
+| `get(id)` | one record, or `None` (soft-deleted rows hidden unless `include_deleted=True`) |
+| `create(data)` / `create_many(items)` | insert from `<Entity>Create` |
+| `update(id, data)` | apply the fields sent in `<Entity>Update`; `None` if not found |
+| `delete(id)` | soft delete; `False` if not found |
+| `search(request)` | filters + text search + sort + limit/offset |
+
+A typo in `filter_fields` / `sort_fields` / `search_fields` fails at startup.
+
+```python
+# models/order.py
+class Order(AuditMixin, Base):
+    __tablename__ = "orders"
+    reference: Mapped[str] = mapped_column(String(50))
+    total: Mapped[int]
+
+# schemas/order.py
+class OrderCreate(CreateSchema):
+    reference: str = Field(max_length=50)
+    total: int = Field(ge=0)
+
+class OrderUpdate(UpdateSchema):
+    total: int | None = Field(None, ge=0)
+
+class OrderResponse(ResponseSchema):
+    reference: str
+    total: int
+
+# services/order.py
+class OrderService(BaseService):
+    model = Order
+    filter_fields = ("reference", "total", *AUDIT_FIELDS)
+    sort_fields = ("total", "created_on")
+    search_fields = ("reference",)
+
+# api/v1/endpoints/orders.py
+router = APIRouter(prefix="/orders", tags=["orders"])
+
+@router.post("", response_model=RecordResponse[OrderResponse], status_code=201)
+async def create_order(payload: OrderCreate, db: AsyncSession = Depends(get_db)):
+    return record_response(await OrderService(db).create(payload))
+
+@router.post("/search", response_model=ListResponse[OrderResponse])
+async def search_orders(payload: SearchRequest, db: AsyncSession = Depends(get_db)):
+    return list_response(await OrderService(db).search(payload))
+
+@router.get("/{order_id}", response_model=RecordResponse[OrderResponse])
+async def get_order(order_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    order = await OrderService(db).get(order_id)
+    if order is None:
+        raise NotFoundError("Order not found", details={"order_id": str(order_id)})
+    return record_response(order)
+
+@router.patch("/{order_id}", response_model=RecordResponse[OrderResponse])
+async def update_order(order_id: uuid.UUID, payload: OrderUpdate, db: AsyncSession = Depends(get_db)):
+    order = await OrderService(db).update(order_id, payload)
+    if order is None:
+        raise NotFoundError("Order not found", details={"order_id": str(order_id)})
+    return record_response(order)
+
+@router.delete("/{order_id}", status_code=204)
+async def delete_order(order_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    if not await OrderService(db).delete(order_id):
+        raise NotFoundError("Order not found", details={"order_id": str(order_id)})
+```
+
+Then register the model in `models/__init__.py`, include the router in
+`api/v1/router.py`, and run `alembic revision --autogenerate -m "add orders"`.
 
 ## Logging, errors & request tracing (backend)
 
@@ -76,11 +173,11 @@ response header, and every error body.
 
 **Error responses** always look like:
 ```json
-{"error": {"code": "not_found", "message": "Item not found",
-           "request_id": "3f2c...", "details": {"item_id": 7}}}
+{"metadata": {"request_id": "3f2c...", "timestamp": "2026-11-27T10:00:00Z"},
+ "error": {"code": "not_found", "message": "Order not found", "details": {"order_id": 7}}}
 ```
 Raise the classes from `app.core.exceptions` in endpoints and services:
-`raise NotFoundError("Item not found", details={"item_id": item_id})`.
+`raise NotFoundError("Order not found", details={"order_id": order_id})`.
 
 | Exception | Status | Log level |
 |---|---|---|
@@ -106,7 +203,7 @@ Raise the classes from `app.core.exceptions` in endpoints and services:
 Errors are also stored in PostgreSQL, alongside the log files:
 
 ```
-logging record --ExceptionLogDBHandler--> ExceptionLogSink (bounded queue)
+logging record --ExceptionLogDBHandler--> exception_log_sink (bounded queue)
                --background worker, batched--> INSERT INTO exception_log
 ```
 
@@ -117,19 +214,60 @@ logging record --ExceptionLogDBHandler--> ExceptionLogSink (bounded queue)
   background task. If the database is down, the error is still in the log files. A
   failed batch is retried row by row. When the queue is full, rows are dropped and
   counted. Queued rows are flushed on shutdown.
-- **Redacted** exactly like the file logs: message, traceback, headers, query, body.
+- **No user data:** no request body, query string, headers, IP address or user agent.
+  User `input` is stripped from validation `details`. Message and traceback are redacted.
+  The log files still have the full redacted request context; join on `request_id`.
 - **Columns:** request_id, status_code, error_code, exception_type, message, traceback,
-  method, path, route, endpoint, client_ip, user_agent, query_params / request_headers /
-  request_body / details (JSONB), level, logger, source, environment, hostname,
-  process_id, occurred_on, plus the common columns.
+  method, path, route, endpoint, details (JSONB), level, logger, source, environment,
+  hostname, process_id, occurred_on, plus the common columns.
 
 Find everything about a failed request from the id the client received:
 ```sql
 SELECT * FROM exception_log WHERE request_id = '3f2c...';
 ```
 
-Code: `app/core/logging/db_handler.py` (record -> row), `app/services/exception_log_sink.py`
-(queue + worker), `app/repositories/exception_log.py` (insert), `app/models/exception_log.py`.
+Code: `app/core/logging/db_handler.py` (record -> row),
+`app/core/logging/db_sink.py` (queue + worker),
+`app/services/exception_log.py` (insert / get / search), `app/models/exception_log.py`.
+
+### `request_logs` table
+
+One row per request, for endpoint monitoring: traffic, error rate and latency.
+It is built from the access-log line the middleware already writes, through the
+same kind of background batched writer (`request_log_sink`), so requests never
+wait on it.
+
+| Column | Example |
+|---|---|
+| `started_on` | exact request start (UTC); rows are written up to a second later |
+| `request_id` | same as the `X-Request-ID` header and `exception_log.request_id` |
+| `method` | `GET` |
+| `route` | `/api/v1/orders/{order_id}`: the template, never the actual URL; group by this for per-endpoint stats; `NULL` for unknown URLs |
+| `endpoint` | `app.api.v1.endpoints.orders.get_order` (the handler function) |
+| `status_code` | `200` |
+| `duration_ms` | `12.4`: from request start until the response was fully sent |
+
+Plus the common columns (`created_by` will hold the user once auth exists). No user
+data: no actual URL path (it carries ids and search terms), IP, user agent, query
+string, headers or body. Paths in
+`REQUEST_LOG_EXCLUDE_PATHS` (default: `/api/v1/health`) are skipped.
+
+Typical monitoring queries:
+```sql
+-- slowest endpoints in the last hour
+SELECT route, count(*), round(avg(duration_ms)) AS avg_ms,
+       percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95_ms
+FROM request_logs WHERE started_on > now() - interval '1 hour'
+GROUP BY route ORDER BY p95_ms DESC;
+
+-- error rate per endpoint today
+SELECT route, count(*) FILTER (WHERE status_code >= 500) * 100.0 / count(*) AS pct_5xx
+FROM request_logs WHERE started_on > current_date GROUP BY route;
+```
+
+No automatic cleanup yet. The table grows by one row per request, so delete old
+rows (e.g. `DELETE FROM request_logs WHERE started_on < now() - interval '30 days'`)
+or add a retention job once volume needs it.
 
 ### Response envelopes (every resource endpoint)
 
@@ -157,8 +295,8 @@ List metadata:
 ### List & search
 
 ```
-GET  /api/v1/items?limit=20&offset=0     simple page, newest first
-POST /api/v1/items/search                filters + text search + sort + page
+GET  /api/v1/<resource>?limit=20&offset=0     simple page, newest first
+POST /api/v1/<resource>/search                filters + text search + sort + page
 ```
 
 ```json
@@ -180,23 +318,9 @@ POST /api/v1/items/search                filters + text search + sort + page
 Operators: `eq ne gt gte lt lte in not_in between contains starts_with ends_with is_null`.
 Filters are combined with AND. `search` is a case-insensitive OR across the resource's
 text fields. Values are converted to the column's type (UUID, datetime, ...), and a
-bad value returns a 422 that points at the failing filter. Only allow-listed fields
-are accepted, and they appear as enums in `/docs`.
-
-Adding list and search to a new table takes one config object:
-
-```python
-ORDER_SEARCH = SearchConfig(
-    model=Order,
-    filterable=("status", "total", *AUDIT_FIELDS),
-    sortable=("total", "created_on"),
-    searchable=("reference",),
-)
-
-@router.post("/search", response_model=ListResponse[OrderRead])
-async def search_orders(payload: ORDER_SEARCH.request_model, db=Depends(get_db)):
-    return list_response(await run_search(db, ORDER_SEARCH, payload))
-```
+bad value returns a 422 that points at the failing filter. Only the fields in the
+service's `filter_fields` / `sort_fields` are accepted; anything else gets a 422
+with code `invalid_filter`.
 
 `exception_log` has the same `GET` / `POST /search` / `GET /{id}` endpoints under
 `/api/v1/exception-logs` when `EXCEPTION_LOG_API_ENABLED=true`.
@@ -212,8 +336,7 @@ Inherit `AuditMixin` (`app/db/mixins.py`):
 | `created_on` | timestamptz | UTC, set on insert |
 | `updated_by` | varchar(255) null | set on every UPDATE |
 | `updated_on` | timestamptz null | UTC, set on every UPDATE |
-| `is_deleted` | boolean | default `false` |
-| `deleted_by` / `deleted_on` | null | set by `obj.soft_delete()` |
+| `is_deleted` | boolean | default `false`; set by `obj.soft_delete()` |
 
 The actor comes from `set_current_actor()` in `app/core/request_context.py`. Once
 authentication is added, call it with the user id in auth middleware and every table's
