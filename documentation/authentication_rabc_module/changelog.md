@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-27: Usernames and default developer access
+
+- Added a separate case-insensitive unique username, with migration backfill for existing users. Login and the OAuth password grant accept username or email.
+- Seeded the `developer` role with read access to exception, request, and service call logs. The existing `admin` role retains all current permissions.
+- Added optional local development seeding for the requested Admin and Developer accounts. Existing passwords and role assignments are preserved.
+
 ## 2026-11-27: Swagger documentation
 - Added an API overview page (`app/api/api_description.md`): auth flows, authorization, envelopes, error codes, search and paging, rate limits, tracing. Also added tag descriptions and version `1.0.0`.
 - Every endpoint now has a summary, an **Access** line (permission / signed-in user / public), behaviour notes and its exact error responses (`error_responses()` in `app/api/responses.py`).

@@ -60,8 +60,8 @@ export const useAuthStore = defineStore('auth', () => {
     return () => signedOutHandlers.delete(handler)
   }
 
-  async function login(email, password) {
-    setToken(await authApi.login(email, password))
+  async function login(identifier, password) {
+    setToken(await authApi.login(identifier, password))
     user.value = await authApi.me()
   }
 

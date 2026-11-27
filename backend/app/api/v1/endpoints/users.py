@@ -1,6 +1,6 @@
 """User administration. Reading needs users:read; changes need users:manage.
 
-You cannot disable, delete or change the roles of your own account (so an
+You cannot disable, lock, delete or change the roles of your own account (so an
 admin cannot lock themselves out). You can only assign roles whose permissions
 you hold, and only disable / delete / re-role users whose permissions you all
 hold (see app/api/v1/access.py).
@@ -35,6 +35,7 @@ from app.schemas.user import (
     UserAdminCreate,
     UserCreate,
     UserDetailResponse,
+    UserLockUpdate,
     UserResponse,
     UserUpdate,
 )
@@ -100,9 +101,9 @@ async def search_users(payload: SearchRequest, db: AsyncSession = Depends(get_db
 
     | Option | Fields |
     |---|---|
-    | `filters` | `email`, `full_name`, `is_active`, `last_login_on`, `id`, `created_by`, `created_on`, `updated_by`, `updated_on` |
-    | `sort` | `email`, `full_name`, `created_on`, `last_login_on` (default: `created_on` desc) |
-    | `search` (text) | `email`, `full_name` |
+    | `filters` | `username`, `email`, `full_name`, `is_active`, `is_locked`, `last_login_on`, `id`, `created_by`, `created_on`, `updated_by`, `updated_on` |
+    | `sort` | `username`, `email`, `full_name`, `created_on`, `last_login_on` (default: `created_on` desc) |
+    | `search` (text) | `username`, `email`, `full_name` |
 
     Example, active users matching "ali":
     `{"search": "ali", "filters": [{"field": "is_active", "value": true}]}`
@@ -133,7 +134,7 @@ async def get_user(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     responses=error_responses(
         401,
         CANNOT_GRANT,
-        (409, "`email_taken`: an account with this email already exists"),
+        (409, "`email_taken` or `username_taken`: email or username already exists"),
         (422, "`unknown_roles`: a role code does not exist (or other validation errors)"),
     ),
 )
@@ -146,15 +147,19 @@ async def create_user(
 
     Creates an active account with the given password and optional `roles` (role codes).
     You can only assign roles whose permissions you hold yourself.
-    The email is stored lower-cased; the password must be 12 to 128 characters.
+    Email is stored lower-cased; username is separately unique without regard to
+    case; the password must be 12 to 128 characters.
     """
     users = UserService(db)
     if await users.get_by_email(payload.email) is not None:
         raise ConflictError("An account with this email already exists.", error_code="email_taken")
+    if await users.get_by_username(payload.username) is not None:
+        raise ConflictError("This username is already taken.", error_code="username_taken")
     roles = await resolve_roles(db, payload.roles)
     await ensure_can_assign_roles(db, principal, roles)
     user = await users.create(
         UserCreate(
+            username=payload.username,
             email=payload.email,
             full_name=payload.full_name,
             password_hash=hash_password(payload.password),
@@ -169,7 +174,12 @@ async def create_user(
     "/{user_id}",
     summary="Update a user",
     response_model=RecordResponse[UserDetailResponse],
-    responses=error_responses(401, CANNOT_GRANT, NOT_FOUND),
+    responses=error_responses(
+        401,
+        CANNOT_GRANT,
+        NOT_FOUND,
+        (409, "`username_taken`: username already belongs to another user"),
+    ),
 )
 async def update_user(
     user_id: uuid.UUID,
@@ -179,13 +189,17 @@ async def update_user(
 ):
     """**Access:** Permission `users:manage`.
 
-    Partial update: only the fields sent change (`full_name`, `is_active`).
+    Partial update: only the fields sent change (`username`, `full_name`, `is_active`).
 
     Setting `is_active: false` disables the account: the user cannot sign in, and their
     sessions end at the next refresh (current access tokens expire within 15 minutes).
     Changing `is_active` is refused for your own account, and for users holding
     permissions you don't have.
     """
+    if payload.username is not None:
+        existing = await UserService(db).get_by_username(payload.username)
+        if existing is not None and existing.id != user_id:
+            raise ConflictError("This username is already taken.", error_code="username_taken")
     if payload.is_active is not None:
         _not_self(principal, user_id, "disable or enable")
         await ensure_can_manage_user(db, principal, await _get_user(db, user_id))
@@ -193,6 +207,36 @@ async def update_user(
     if user is None:
         raise NotFoundError("User not found", details={"user_id": str(user_id)})
     if payload.is_active is False:
+        await RefreshTokenService(db).revoke_for_user(user.id)
+    return record_response(await user_detail(db, user))
+
+
+@router.put(
+    "/{user_id}/lock",
+    summary="Lock or unlock a user",
+    response_model=RecordResponse[UserDetailResponse],
+    responses=error_responses(401, CANNOT_GRANT, NOT_FOUND),
+)
+async def set_user_lock(
+    user_id: uuid.UUID,
+    payload: UserLockUpdate,
+    principal: Principal = Depends(can_manage),
+    db: AsyncSession = Depends(get_db),
+):
+    """**Access:** Permission `users:manage`.
+
+    `locked: true` blocks sign-in until an administrator unlocks the account.
+    It also revokes refresh sessions; existing access tokens expire normally.
+    `locked: false` clears both the administrator lock and any temporary
+    failed-password lockout. Enabled/disabled status is unchanged.
+
+    Refused for your own account and for users whose permissions you do not hold.
+    """
+    _not_self(principal, user_id, "lock or unlock")
+    user = await _get_user(db, user_id)
+    await ensure_can_manage_user(db, principal, user)
+    user = await UserService(db).set_locked(user, payload.locked)
+    if payload.locked:
         await RefreshTokenService(db).revoke_for_user(user.id)
     return record_response(await user_detail(db, user))
 

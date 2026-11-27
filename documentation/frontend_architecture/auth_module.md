@@ -33,7 +33,7 @@ sequenceDiagram
     Note over A,B: later: 401 token_expired → refresh once → retry
 ```
 
-- **Login:** `auth.login(email, password)` → token + `me` → go to `redirect`, which must be an in-app path.
+- **Login:** `auth.login(identifier, password)` accepts username or email, then loads the token and `me` before going to the in-app `redirect`.
 - **Logout:** `POST /auth/logout`, clear the store, go to `/login`.
 - **Refresh:** also reloads `me` in the background, so role changes show up within 15 minutes.
 - **Login errors:** `invalid_credentials`, `rate_limited` (shows `retryAfter`), `network_error` and `timeout` each get a clear message.

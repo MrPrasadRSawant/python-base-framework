@@ -21,7 +21,7 @@ from app.services.user import UserService
 from app.services.user_role import UserRoleService
 
 
-async def create_admin(email: str, full_name: str) -> None:
+async def create_admin(email: str, full_name: str, username: str) -> None:
     set_current_actor("cli:create_admin")
     async with SessionLocal() as db:
         role = await RoleService(db).get_by_code(ADMIN_ROLE)
@@ -30,13 +30,20 @@ async def create_admin(email: str, full_name: str) -> None:
         users = UserService(db)
         user = await users.get_by_email(email)
         if user is None:
+            if await users.get_by_username(username) is not None:
+                sys.exit("Username is already in use. Pass a different --username.")
             password = getpass.getpass("Password: ")
             if len(password) < PASSWORD_MIN_LENGTH:
                 sys.exit(f"Password must be at least {PASSWORD_MIN_LENGTH} characters.")
             if password != getpass.getpass("Repeat password: "):
                 sys.exit("Passwords do not match.")
             user = await users.create(
-                UserCreate(email=email, full_name=full_name, password_hash=hash_password(password))
+                UserCreate(
+                    username=username,
+                    email=email,
+                    full_name=full_name,
+                    password_hash=hash_password(password),
+                )
             )
             print(f"Created user {email}")
         user_roles = UserRoleService(db)
@@ -52,8 +59,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("email")
     parser.add_argument("full_name", nargs="?", default="Administrator")
+    parser.add_argument("--username", help="Unique sign-in name (defaults to email prefix)")
     args = parser.parse_args()
-    asyncio.run(create_admin(normalize_email(args.email), args.full_name))
+    asyncio.run(
+        create_admin(
+            normalize_email(args.email),
+            args.full_name,
+            args.username or args.email.split("@", 1)[0],
+        )
+    )
 
 
 if __name__ == "__main__":

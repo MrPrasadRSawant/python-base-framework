@@ -87,6 +87,8 @@ class Settings(BaseSettings):
     LOGIN_LOCK_MINUTES: int = Field(15, ge=1)
     # POST /auth/register open to anyone. Keep false unless the app allows sign-up.
     AUTH_SELF_REGISTRATION_ENABLED: bool = False
+    # Local development only: create the two documented demo accounts on startup.
+    DEV_SEED_ACCOUNTS: bool = False
     # Refresh token: opaque, stored hashed, sent as an HttpOnly cookie scoped to /auth.
     REFRESH_TOKEN_TTL_DAYS: int = Field(7, ge=1)
     REFRESH_COOKIE_NAME: str = "refresh_token"

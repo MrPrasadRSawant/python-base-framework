@@ -44,7 +44,7 @@ oauth2 = OAuth2(
     ),
     scheme_name="OAuth2",
     description=(
-        "**password**: email as username + password (client_id/secret empty). "
+        "**password**: username or email + password (client_id/secret empty). "
         "**clientCredentials**: an API client's client_id + client_secret."
     ),
     auto_error=False,

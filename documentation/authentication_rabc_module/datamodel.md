@@ -22,6 +22,7 @@ erDiagram
 ### `users`
 | Column | Type | Notes |
 |---|---|---|
+| username | String(64) | separate from email; unique without regard to case among non-deleted users |
 | email | String(255) | unique (lower-cased) |
 | password_hash | String(255) | argon2 |
 | full_name | String(255) | |

@@ -9,6 +9,7 @@
         clearable
         debounce="350"
         :placeholder="searchPlaceholder"
+        :aria-label="searchPlaceholder"
         class="app-table__search"
       >
         <template #prepend><q-icon name="search" /></template>

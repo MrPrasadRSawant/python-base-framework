@@ -1,22 +1,25 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from app.schemas.user import PASSWORD_MAX_LENGTH, normalize_email
+from app.schemas.user import PASSWORD_MAX_LENGTH
 
 
 class LoginRequest(BaseModel):
-    """Email + password sign-in."""
+    """Username or email + password sign-in."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    email: EmailStr = Field(max_length=255, examples=["alice@example.com"])
+    identifier: str = Field(
+        min_length=1,
+        max_length=255,
+        validation_alias=AliasChoices("identifier", "email", "username"),
+        description="Username or email address; email and username are case-insensitive",
+        examples=["Developer"],
+    )
     password: str = Field(
         min_length=1, max_length=PASSWORD_MAX_LENGTH, examples=["correct-horse-battery"]
     )
-
-    _email = field_validator("email")(normalize_email)
-
 
 class TokenResponse(BaseModel):
     """An access token. Send it as `Authorization: Bearer <access_token>`."""

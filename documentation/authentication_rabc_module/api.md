@@ -14,7 +14,7 @@ Prefix `/api/v1`. Responses use the standard envelopes (`{"metadata", "record"}`
 | GET, POST /search, GET /{id} | `/api-clients` | `api_clients:read` | 4 | ✅ |
 | POST, PATCH /{id}, PUT /{id}/permissions, POST /{id}/rotate-secret, DELETE /{id} | `/api-clients` | `api_clients:manage` | 4 | ✅ |
 | GET, POST /search, GET /{id} | `/users` | `users:read` | 3 | ✅ |
-| POST, PATCH /{id}, DELETE /{id}, PUT /{id}/roles | `/users` | `users:manage` | 3 | ✅ |
+| POST, PATCH /{id}, DELETE /{id}, PUT /{id}/roles, PUT /{id}/lock | `/users` | `users:manage` | 3 | ✅ |
 | GET, POST /search, GET /{id} | `/roles` | `roles:read` | 3 | ✅ |
 | POST, PATCH /{id}, DELETE /{id}, PUT /{id}/permissions | `/roles` | `roles:manage` | 3 | ✅ |
 | GET | `/permissions` | `roles:read` | 3 | ✅ |
@@ -22,18 +22,18 @@ Prefix `/api/v1`. Responses use the standard envelopes (`{"metadata", "record"}`
 
 ## POST /auth/register
 ```json
-{"email": "alice@example.com", "full_name": "Alice", "password": "min-12-characters"}
+{"username": "Alice", "email": "alice@example.com", "full_name": "Alice", "password": "min-12-characters"}
 ```
-201 → `record`: `UserResponse` (id, email, full_name, is_active, last_login_on, audit fields).
-Email is lower-cased. Errors: 403 `registration_disabled`, 409 `email_taken`, 422 validation.
+201 → `record`: `UserResponse` (id, username, email, full_name, is_active, is_locked, locked_until, last_login_on, audit fields).
+Email is lower-cased. Username and email are separate and each is case-insensitively unique. Errors: 403 `registration_disabled`, 409 `email_taken` or `username_taken`, 422 validation.
 
 ## POST /auth/login
 ```json
-{"email": "alice@example.com", "password": "..."}
+{"identifier": "Alice", "password": "..."}
 ```
 200 → `{"record": {"access_token": "<jwt>", "token_type": "bearer", "expires_in": 900}}` + `Set-Cookie: refresh_token=…; HttpOnly; Path=/api/v1/auth`
 
-401 `invalid_credentials` for every failure (unknown email, wrong password, inactive, locked).
+`identifier` accepts a username or email. 401 `invalid_credentials` for every failure (unknown account, wrong password, inactive, locked).
 After `LOGIN_MAX_FAILED` wrong passwords the account is locked for `LOGIN_LOCK_MINUTES`.
 
 ## POST /auth/refresh
@@ -46,7 +46,7 @@ No body. Revokes the session and clears the cookie. Always 204.
 The access token stays valid until it expires (≤ 15 min); the frontend drops it.
 
 ## POST /auth/token (OAuth2)
-Form: `grant_type=password&username=<email>&password=...`
+Form: `grant_type=password&username=<username-or-email>&password=...`
 200 → plain OAuth2 body (no envelope): `{"access_token", "token_type": "bearer", "expires_in"}`. No refresh cookie.
 Used by Swagger and OAuth2 tools; the web app uses `/auth/login`.
 
@@ -72,7 +72,7 @@ Disabling, deleting or rotating blocks new tokens at once. A token already issue
 
 ## Swagger (`/docs`)
 Click **Authorize**, then use one of:
-- **OAuth2 / password**: enter email + password (client_id/secret empty) → Swagger calls `/auth/token`.
+- **OAuth2 / password**: enter username or email + password (client_id/secret empty) → Swagger calls `/auth/token`.
 - **OAuth2 / clientCredentials**: enter an API client's client_id + client_secret.
 - **BearerToken**: paste an access token.
 
@@ -83,8 +83,9 @@ Header `Authorization: Bearer <jwt>` → 200 `record`: `UserDetailResponse` (`Us
 401 no/invalid/expired token · 403 service token · 404 user deleted or disabled.
 
 ## Users (admin)
-- `POST /users` `{"email", "full_name", "password", "roles": ["admin"]}` → 201 `UserDetailResponse`
-- `PATCH /users/{id}` `{"full_name"?, "is_active"?}`; disabling also signs the user out
+- `POST /users` `{"username", "email", "full_name", "password", "roles": ["admin"]}` → 201 `UserDetailResponse`
+- `PATCH /users/{id}` `{"username"?, "full_name"?, "is_active"?}`; disabling also signs the user out
+- `PUT /users/{id}/lock` `{"locked": true|false}` sets a persistent administrator lock, separate from `is_active`. Locking revokes refresh sessions; unlocking also clears a temporary failed-password lockout.
 - `PUT /users/{id}/roles` `{"roles": [...]}` replaces the full set (`[]` removes all)
 - `DELETE /users/{id}` → 204 (soft delete; signs the user out)
 
@@ -92,6 +93,11 @@ Header `Authorization: Bearer <jwt>` → 200 `record`: `UserDetailResponse` (`Us
 - `POST /roles` `{"code": "support_agent", "name": "...", "description"?}` → 201 `RoleDetailResponse` (+ `permissions`)
 - `PUT /roles/{id}/permissions` `{"permissions": ["users:read"]}` replaces the full set
 - `DELETE /roles/{id}` → 204, also removes the role from every user
+
+Migrations seed `admin` with all current permissions and `developer` with exactly
+`exception_logs:read`, `request_logs:read`, and `service_call_logs:read`.
+Optional local development seeding creates one account for each role (see the
+repository README). It never runs against a remote or production database.
 
 ## Rate limits
 `/auth/login`, `/auth/token`, `/auth/register` and `/auth/refresh` are limited per client IP; client_credentials is also limited per client_id. Over the limit: `429` `rate_limited` + `Retry-After: <seconds>`. Limits are in `RATE_LIMIT_*` settings.
@@ -103,7 +109,7 @@ Header `Authorization: Bearer <jwt>` → 200 `record`: `UserDetailResponse` (`Us
 | 403 | `cannot_grant` | granting or touching permissions you don't hold |
 | 403 | `self_change` | disabling, deleting or re-roling yourself |
 | 403 | `system_role` | deleting or editing the permissions of `admin` |
-| 409 | `email_taken` / `role_code_taken` | duplicate |
+| 409 | `email_taken` / `username_taken` / `role_code_taken` | duplicate |
 | 422 | `unknown_roles` / `unknown_permissions` | code not found |
 
 ## Documenting an endpoint (Swagger)
