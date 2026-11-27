@@ -11,6 +11,8 @@ export default {
   menu: [
     {
       label: 'User Management',
+      group: 'Access management',
+      groupIcon: 'manage_accounts',
       icon: 'group',
       to: { name: 'users' },
       permission: 'users:read',

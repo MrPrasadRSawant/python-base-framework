@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-27: Developer monitoring and permission tools
+
+- Added Exception Analysis with severity filters, error-code frequency, summary metrics, and redacted exception detail linked to its request.
+- Added Request Lifecycle reports with response-time summaries and a chronological drilldown of service calls, nested work, failures, and response timing.
+- Added Permission Management to review the catalog and assign role permissions. The Developer role can manage only permissions it already holds and cannot assign roles to users.
+
 ## 2026-11-27: User and Role Management
 
 - Added separate, unique usernames to user creation, search, and sign-in. The login page accepts username or email.

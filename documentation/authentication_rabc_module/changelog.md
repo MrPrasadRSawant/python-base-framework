@@ -4,6 +4,7 @@
 
 - Added a separate case-insensitive unique username, with migration backfill for existing users. Login and the OAuth password grant accept username or email.
 - Seeded the `developer` role with read access to exception, request, and service call logs. The existing `admin` role retains all current permissions.
+- Added `roles:read` and `roles:manage` to the developer role for Permission Management, with changes limited to permissions the developer already holds.
 - Added optional local development seeding for the requested Admin and Developer accounts. Existing passwords and role assignments are preserved.
 
 ## 2026-11-27: Swagger documentation

@@ -9,7 +9,7 @@
         clearable
         debounce="350"
         :placeholder="searchPlaceholder"
-        :aria-label="searchPlaceholder"
+        :aria-label="searchAriaLabel || searchPlaceholder"
         class="app-table__search"
       >
         <template #prepend><q-icon name="search" /></template>
@@ -38,7 +38,7 @@
       :row-key="rowKey"
       :loading="loading"
       :rows-per-page-options="[10, 20, 50, 100]"
-      class="app-table__table"
+      :class="['app-table__table', tableClass]"
       @request="onRequest"
       @row-click="(evt, row) => emit('row-click', row)"
     >
@@ -77,11 +77,13 @@ import AppEmptyState from './AppEmptyState.vue'
 const props = defineProps({
   resource: { type: Object, required: true }, // createResource(...) or {search(body)}
   columns: { type: Array, required: true },
+  tableClass: { type: String, default: '' },
   rowKey: { type: String, default: 'id' },
   filters: { type: Array, default: () => [] }, // SearchRequest filters, always applied
   searchable: { type: Boolean, default: true },
   searchPlaceholder: { type: String, default: 'Search' },
-  pageSize: { type: Number, default: 20 },
+  searchAriaLabel: { type: String, default: '' },
+  pageSize: { type: Number, default: 10 },
   sortBy: { type: String, default: null }, // initial sort column name
   descending: { type: Boolean, default: true },
   emptyIcon: { type: String, default: 'inbox' },
@@ -167,7 +169,15 @@ defineExpose({ reload })
 .app-table__table {
   background: transparent;
 
+  :deep(.q-table__middle) {
+    max-height: min(640px, max(220px, calc(100vh - 460px)));
+    overflow: auto;
+  }
+
   :deep(thead tr th) {
+    position: sticky;
+    top: 0;
+    z-index: 2;
     background: var(--app-surface-muted);
     color: var(--app-text-muted);
     font-weight: 600;

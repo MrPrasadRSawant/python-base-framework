@@ -20,6 +20,7 @@ class SearchResult:
     offset: int
     has_more: bool
     sort: list[tuple[str, SortDirection]]
+    average_duration_ms: float | None = None
 
 
 def invalid_search(message: str, loc: list[Any]) -> UnprocessableEntityError:

@@ -64,6 +64,8 @@ async def test_db_catalog_matches_code_and_admin_has_everything(db_session_facto
         Perm.EXCEPTION_LOGS_READ,
         Perm.REQUEST_LOGS_READ,
         Perm.SERVICE_CALL_LOGS_READ,
+        Perm.ROLES_READ,
+        Perm.ROLES_MANAGE,
     }
 
 

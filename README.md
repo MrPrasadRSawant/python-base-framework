@@ -37,7 +37,7 @@ the app creates these accounts if they do not already exist:
 | Username | Email | Password | Role |
 |---|---|---|---|
 | `Admin` | `admin@baseframework.com` | `Admin@123` | `admin` (all current permissions) |
-| `Developer` | `developer@baseframework.com` | `Developer@123` | `developer` (read exception, request, and service call logs) |
+| `Developer` | `developer@baseframework.com` | `Developer@123` | `developer` (read logs; manage role permissions within its own grant scope) |
 
 Sign in with either the username or email. They are separate, case-insensitively
 unique fields. The seed only runs with `ENVIRONMENT=development` and a local

@@ -16,10 +16,11 @@
  * Adding a module = create module/<name>/index.js and list it below.
  */
 import auth from './auth'
+import developer from './developer'
 import roles from './roles'
 import users from './users'
 
-export const modules = [auth, users, roles]
+export const modules = [auth, users, roles, developer]
 
 export const publicRoutes = modules.flatMap((m) => m.publicRoutes || [])
 export const appRoutes = modules.flatMap((m) => m.routes || [])

@@ -94,10 +94,12 @@ Header `Authorization: Bearer <jwt>` → 200 `record`: `UserDetailResponse` (`Us
 - `PUT /roles/{id}/permissions` `{"permissions": ["users:read"]}` replaces the full set
 - `DELETE /roles/{id}` → 204, also removes the role from every user
 
-Migrations seed `admin` with all current permissions and `developer` with exactly
-`exception_logs:read`, `request_logs:read`, and `service_call_logs:read`.
-Optional local development seeding creates one account for each role (see the
-repository README). It never runs against a remote or production database.
+Migrations seed `admin` with all current permissions. `developer` has
+`exception_logs:read`, `request_logs:read`, `service_call_logs:read`, and
+`roles:read` / `roles:manage` for Permission Management. Role changes remain
+limited to permissions the developer already holds, and developers cannot assign
+roles to users. Optional local development seeding creates one account for each
+role (see the repository README). It never runs against a remote or production database.
 
 ## Rate limits
 `/auth/login`, `/auth/token`, `/auth/register` and `/auth/refresh` are limited per client IP; client_credentials is also limited per client_id. Over the limit: `429` `rate_limited` + `Retry-After: <seconds>`. Limits are in `RATE_LIMIT_*` settings.

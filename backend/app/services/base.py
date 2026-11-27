@@ -19,7 +19,7 @@ Subclass it, point it at a model and list which fields may be used:
 import uuid
 from typing import Any
 
-from sqlalchemy import Select, String, and_, func, or_, select
+from sqlalchemy import Select, String, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.service_tracking import track_service
@@ -36,6 +36,7 @@ class BaseService:
     filter_fields: tuple[str, ...] = AUDIT_FIELDS
     sort_fields: tuple[str, ...] = ("created_on",)
     search_fields: tuple[str, ...] = ()
+    search_cast_fields: tuple[str, ...] = ()
     default_sort: tuple[tuple[str, SortDirection], ...] = (("created_on", SortDirection.DESC),)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -43,7 +44,7 @@ class BaseService:
         super().__init_subclass__(**kwargs)
         if not hasattr(cls, "model"):
             return  # an intermediate base without a table
-        names = {*cls.filter_fields, *cls.sort_fields, *cls.search_fields}
+        names = {*cls.filter_fields, *cls.sort_fields, *cls.search_fields, *cls.search_cast_fields}
         names |= {name for name, _ in cls.default_sort}
         missing = sorted(name for name in names if not hasattr(cls.model, name))
         if missing:
@@ -141,14 +142,18 @@ class BaseService:
             conditions.append(self.model.is_deleted.is_(False))
 
         text = (request.search or "").strip()
-        if text and self.search_fields:
+        if text and (self.search_fields or self.search_cast_fields):
             pattern = f"%{escape_like(text)}%"
             conditions.append(
                 or_(
                     *(
                         getattr(self.model, f).ilike(pattern, escape="\\")
                         for f in self.search_fields
-                    )
+                    ),
+                    *(
+                        cast(getattr(self.model, f), String).ilike(pattern, escape="\\")
+                        for f in self.search_cast_fields
+                    ),
                 )
             )
 
