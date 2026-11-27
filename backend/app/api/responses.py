@@ -29,6 +29,7 @@ def list_response(result: SearchResult) -> dict[str, Any]:
             "offset": result.offset,
             "count": count,
             "total_count": result.total_count,
+            "average_duration_ms": result.average_duration_ms,
             "has_more": result.has_more,
             "next_offset": result.offset + count if result.has_more else None,
             "previous_offset": (

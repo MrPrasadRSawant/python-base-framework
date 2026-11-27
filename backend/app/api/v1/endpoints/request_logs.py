@@ -51,7 +51,7 @@ async def search_request_logs(payload: SearchRequest, db: AsyncSession = Depends
     |---|---|
     | `filters` | `method`, `route`, `endpoint`, `status_code`, `duration_ms`, `started_on`, `id`, `created_by`, `created_on`, `updated_by`, `updated_on` |
     | `sort` | `started_on`, `duration_ms`, `status_code`, `route` (default: `started_on` desc) |
-    | `search` (text) | `route`, `endpoint` |
+    | `search` (text) | `route`, `endpoint`, request ID (partial match) |
 
     Example, slow requests: `{"filters": [{"field": "duration_ms", "op": "gte", "value": 1000}]}`
     """
