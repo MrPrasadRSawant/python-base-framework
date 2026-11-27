@@ -1,6 +1,7 @@
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -17,6 +18,42 @@ from app.db.session import engine
 from app.middleware import register_middleware
 
 setup_logging(settings)
+
+# ---- API docs (Swagger /docs, ReDoc /redoc) --------------------------------
+API_VERSION = "1.0.0"
+API_DESCRIPTION = (Path(__file__).parent / "api" / "api_description.md").read_text("utf-8")
+OPENAPI_TAGS = [
+    {
+        "name": "auth",
+        "description": "Sign in, renew and end sessions, OAuth2 tokens for tools and API "
+        "clients, and the current user.",
+    },
+    {"name": "users", "description": "User administration: accounts, status and roles."},
+    {
+        "name": "roles",
+        "description": "Roles (named sets of permissions assigned to users) and the "
+        "read-only permission catalog.",
+    },
+    {
+        "name": "api clients",
+        "description": "Server-to-server integrations (OAuth2 client credentials): "
+        "credentials, permissions, IP allowlist and secret rotation.",
+    },
+    {
+        "name": "exception logs",
+        "description": "Stored API errors and server exceptions, for support and debugging.",
+    },
+    {
+        "name": "requests",
+        "description": "One row per HTTP request (route, status, duration) and developer "
+        "reports that join service calls and errors.",
+    },
+    {
+        "name": "service call logs",
+        "description": "Timing and outcome of each tracked service call within a request.",
+    },
+    {"name": "health", "description": "Liveness and database status, for monitoring."},
+]
 logger = logging.getLogger(__name__)
 
 
@@ -41,7 +78,16 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
 def create_app() -> FastAPI:
     # debug stays False: in debug mode Starlette shows its own traceback page
     # instead of our handlers. settings.DEBUG controls error detail instead.
-    app = FastAPI(title=settings.APP_NAME, debug=False, lifespan=lifespan)
+    app = FastAPI(
+        title=settings.APP_NAME,
+        version=API_VERSION,
+        description=API_DESCRIPTION,
+        openapi_tags=OPENAPI_TAGS,
+        debug=False,
+        lifespan=lifespan,
+        # Keep the Swagger "Authorize" token across page reloads.
+        swagger_ui_parameters={"persistAuthorization": True},
+    )
 
     register_middleware(app, settings)
     register_exception_handlers(app)

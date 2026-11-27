@@ -13,7 +13,7 @@ Responses are always wrapped in the standard envelopes from schemas/responses.py
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreateSchema(BaseModel):
@@ -37,8 +37,10 @@ class ResponseSchema(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: uuid.UUID
-    created_by: str
-    created_on: datetime
-    updated_by: str | None = None
-    updated_on: datetime | None = None
+    id: uuid.UUID = Field(description="Record id")
+    created_by: str = Field(
+        description="Who created it: `user:<id>`, `service:<client_id>` or `system`"
+    )
+    created_on: datetime = Field(description="Creation time (UTC)")
+    updated_by: str | None = Field(None, description="Who last changed it (null if never)")
+    updated_on: datetime | None = Field(None, description="Last change time (UTC)")

@@ -10,8 +10,14 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/health")
+@router.get("/health", summary="Health check")
 async def health(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+    """**Access:** Public.
+
+    Always `200` while the API process is up: `{"status": "ok", "database": "ok"}`.
+    `database` is `"unavailable"` when PostgreSQL cannot be reached. Not stored in the
+    request log. Use it for load-balancer and uptime checks.
+    """
     try:
         await db.execute(text("SELECT 1"))
         database = "ok"

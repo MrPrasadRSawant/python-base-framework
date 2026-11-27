@@ -4,3 +4,5 @@ asyncpg==0.32.0
 alembic==1.20.1
 pydantic-settings==2.16.3
 pytest==9.2.0
+pyjwt==2.10.1
+pwdlib[argon2]==0.2.1

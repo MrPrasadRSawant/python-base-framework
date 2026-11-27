@@ -213,3 +213,10 @@ async def test_base_service_crud(db_session_factory, prefix):
         assert await service.get(row.id) is None
         assert await service.get(row.id, include_deleted=True) is not None
         assert await service.delete(row.id) is False  # already deleted
+
+
+@pytest.fixture
+def api(api, admin_headers):
+    """The log APIs need *_logs:read: call them as an admin."""
+    api.headers.update(admin_headers)
+    return api
