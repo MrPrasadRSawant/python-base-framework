@@ -116,3 +116,83 @@ async def test_service_writes_and_searches(db_session_factory):
         )
         assert [r.duration_ms for r in slow_failures.records] == [400.0, 300.0]
         assert slow_failures.records[0].route == "/api/v1/orders/{order_id}"
+
+
+# ------------------------------------------------------------ API endpoints
+URL = "/api/v1/request-logs"
+
+
+def test_search_rejects_unknown_and_removed_fields(client):
+    for field in ("path", "client_ip"):
+        r = client.post(f"{URL}/search", json={"filters": [{"field": field, "value": "x"}]})
+        assert r.status_code == 422, field
+        assert r.json()["error"]["code"] == "invalid_filter"
+    assert client.get(f"{URL}?limit=1000").status_code == 422
+
+
+@pytest.fixture
+def seed_requests(db_session_factory):
+    async def _seed(prefix: str, *rows: dict):
+        from app.schemas.request_log import RequestLogCreate
+        from app.services.request_log import RequestLogService
+
+        now = datetime.now(UTC)
+        async with db_session_factory() as session:
+            await RequestLogService(session).create_many(
+                [
+                    RequestLogCreate(
+                        started_on=now,
+                        request_id=f"{prefix}{row['rid']}",
+                        method=row.get("method", "GET"),
+                        route=row.get("route", "/api/v1/orders/{order_id}"),
+                        status_code=row.get("status", 200),
+                        duration_ms=row.get("ms", 10.0),
+                    )
+                    for row in rows
+                ]
+            )
+
+    return _seed
+
+
+@pytest.mark.anyio
+async def test_api_list_search_and_detail(api, seed_requests):
+    prefix = f"t{uuid.uuid4().hex[:8]}-"
+    await seed_requests(
+        prefix,
+        {"rid": "fast", "ms": 5.0},
+        {"rid": "slow", "ms": 900.0, "status": 500},
+        {"rid": "post", "method": "POST", "route": "/api/v1/orders", "status": 201},
+    )
+    mine = {"field": "request_id", "op": "starts_with", "value": prefix}
+
+    # slowest failing requests first
+    r = await api.post(
+        f"{URL}/search",
+        json={
+            "filters": [mine, {"field": "status_code", "op": "gte", "value": 500}],
+            "sort": [{"field": "duration_ms", "direction": "desc"}],
+        },
+    )
+    body = r.json()
+    assert r.status_code == 200
+    assert [x["request_id"] for x in body["records"]] == [f"{prefix}slow"]
+    assert body["metadata"]["total_count"] == 1
+    assert body["metadata"]["request_id"] == r.headers[HEADER]
+    assert "path" not in body["records"][0]
+
+    # text search on route
+    r = await api.post(f"{URL}/search", json={"filters": [mine], "search": "orders/{order_id}"})
+    assert sorted(x["request_id"] for x in r.json()["records"]) == [
+        f"{prefix}fast",
+        f"{prefix}slow",
+    ]
+
+    # simple list + detail envelopes
+    r = await api.get(URL, params={"limit": 1})
+    assert set(r.json()) == {"metadata", "records"} and r.json()["metadata"]["limit"] == 1
+    log_id = body["records"][0]["id"]
+    r = await api.get(f"{URL}/{log_id}")
+    assert r.status_code == 200 and r.json()["record"]["duration_ms"] == 900.0
+    r = await api.get(f"{URL}/{uuid.uuid4()}")
+    assert r.status_code == 404 and r.json()["error"]["code"] == "not_found"

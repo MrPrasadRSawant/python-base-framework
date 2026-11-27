@@ -265,6 +265,9 @@ SELECT route, count(*) FILTER (WHERE status_code >= 500) * 100.0 / count(*) AS p
 FROM request_logs WHERE started_on > current_date GROUP BY route;
 ```
 
+Read it over the API at `/api/v1/request-logs` (list / search / detail, see below)
+when `REQUEST_LOG_API_ENABLED=true`, or with SQL.
+
 No automatic cleanup yet. The table grows by one row per request, so delete old
 rows (e.g. `DELETE FROM request_logs WHERE started_on < now() - interval '30 days'`)
 or add a retention job once volume needs it.
@@ -322,8 +325,21 @@ bad value returns a 422 that points at the failing filter. Only the fields in th
 service's `filter_fields` / `sort_fields` are accepted; anything else gets a 422
 with code `invalid_filter`.
 
-`exception_log` has the same `GET` / `POST /search` / `GET /{id}` endpoints under
-`/api/v1/exception-logs` when `EXCEPTION_LOG_API_ENABLED=true`.
+Both log tables have read-only `GET` (list) / `POST /search` / `GET /{id}` endpoints.
+Each is switched on by its own setting, and should get admin auth before being
+enabled in production:
+
+| Table | Endpoints | Setting |
+|---|---|---|
+| `exception_log` | `/api/v1/exception-logs` | `EXCEPTION_LOG_API_ENABLED` |
+| `request_logs` | `/api/v1/request-logs` | `REQUEST_LOG_API_ENABLED` |
+
+For example, the slowest failing requests:
+```json
+POST /api/v1/request-logs/search
+{"filters": [{"field": "status_code", "op": "gte", "value": 500}],
+ "sort": [{"field": "duration_ms", "direction": "desc"}], "limit": 20}
+```
 
 ### Common columns (every table)
 

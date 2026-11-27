@@ -56,8 +56,9 @@ class Settings(BaseSettings):
     DB_LOG_BATCH_SIZE: int = 50
     DB_LOG_FLUSH_INTERVAL: float = 1.0  # seconds
 
-    # Read-only API over exception_log. Put it behind auth before enabling in production.
+    # Read-only APIs over the log tables. Put them behind auth before enabling in production.
     EXCEPTION_LOG_API_ENABLED: bool = False
+    REQUEST_LOG_API_ENABLED: bool = False
 
     # --- Pagination / search ---
     PAGINATION_DEFAULT_LIMIT: int = 20

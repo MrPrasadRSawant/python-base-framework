@@ -9,7 +9,8 @@ os.environ["DEBUG"] = "false"
 # Tests never touch the real DB; the exception_log handler is tested with a fake sink.
 os.environ["EXCEPTION_LOG_DB_ENABLED"] = "false"
 os.environ["REQUEST_LOG_DB_ENABLED"] = "false"
-os.environ["EXCEPTION_LOG_API_ENABLED"] = "true"  # so its endpoints can be tested
+os.environ["EXCEPTION_LOG_API_ENABLED"] = "true"  # so their endpoints can be tested
+os.environ["REQUEST_LOG_API_ENABLED"] = "true"
 
 import pytest  # noqa: E402
 from fastapi import APIRouter  # noqa: E402
