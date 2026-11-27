@@ -41,10 +41,14 @@ def report_exception(
     }
     if details is not None:
         extra["details"] = details
+    # The bare reason ("Item not found"): stored as exception_log.message. The full
+    # log line below also carries the URL path, which belongs in the log files only.
+    reason = summary if summary is not None else str(exc) or type(exc).__name__
+    extra["reason"] = reason
 
     message = (
         f"{type(exc).__name__} on {context.get('method')} {context.get('path')} "
-        f"-> {status_code} {error_code}: {summary if summary is not None else exc}"
+        f"-> {status_code} {error_code}: {reason}"
     )
     if is_server_error:
         logger.error(message, exc_info=exc, extra=extra)

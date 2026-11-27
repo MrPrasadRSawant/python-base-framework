@@ -46,15 +46,21 @@ class Settings(BaseSettings):
     LOG_REQUEST_BODY_ON_ERROR: bool = True
     LOG_MAX_BODY_BYTES: int = 4096
 
-    # --- Exception log table (in addition to the log files) ---
+    # --- Log tables (in addition to the log files) ---
     EXCEPTION_LOG_DB_ENABLED: bool = True
     EXCEPTION_LOG_DB_MIN_STATUS: int = 400  # 500 -> store server errors only
-    EXCEPTION_LOG_QUEUE_SIZE: int = 10_000
-    EXCEPTION_LOG_BATCH_SIZE: int = 50
-    EXCEPTION_LOG_FLUSH_INTERVAL: float = 1.0  # seconds
+    REQUEST_LOG_DB_ENABLED: bool = True
+    REQUEST_LOG_EXCLUDE_PATHS: Annotated[list[str], NoDecode] = ["/api/v1/health"]
+    SERVICE_CALL_LOG_DB_ENABLED: bool = True  # rows from @track_service
+    # Background writer shared by all log tables
+    DB_LOG_QUEUE_SIZE: int = 10_000
+    DB_LOG_BATCH_SIZE: int = 50
+    DB_LOG_FLUSH_INTERVAL: float = 1.0  # seconds
 
-    # Read-only API over exception_log. Put it behind auth before enabling in production.
+    # Read-only APIs over the log tables. Put them behind auth before enabling in production.
     EXCEPTION_LOG_API_ENABLED: bool = False
+    REQUEST_LOG_API_ENABLED: bool = False
+    SERVICE_CALL_LOG_API_ENABLED: bool = False
 
     # --- Pagination / search ---
     PAGINATION_DEFAULT_LIMIT: int = 20
@@ -69,7 +75,9 @@ class Settings(BaseSettings):
     REDACT_EXTRA_KEYS: Annotated[list[str], NoDecode] = []
     REDACT_EMAILS: bool = True
 
-    @field_validator("CORS_ORIGINS", "REDACT_EXTRA_KEYS", mode="before")
+    @field_validator(
+        "CORS_ORIGINS", "REDACT_EXTRA_KEYS", "REQUEST_LOG_EXCLUDE_PATHS", mode="before"
+    )
     @classmethod
     def split_csv(cls, value: str | list[str]) -> list[str]:
         return _split_csv(value)

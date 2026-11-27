@@ -1,7 +1,8 @@
+import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Integer, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,7 +11,12 @@ from app.db.mixins import AuditMixin
 
 
 class ExceptionLog(AuditMixin, Base):
-    """One row per exception. Every value is redacted before insert."""
+    """One row per exception.
+
+    Stores only technical data about the failure. Nothing the user sent
+    (body, query string, headers) and nothing identifying the user's device
+    (IP address, user agent). Use ``request_id`` to correlate with the log files.
+    """
 
     __tablename__ = "exception_log"
 
@@ -19,7 +25,8 @@ class ExceptionLog(AuditMixin, Base):
     logger: Mapped[str] = mapped_column(String(255))
     source: Mapped[str | None] = mapped_column(String(512))  # module:function:line
 
-    request_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    # Logical link to requests.id (same UUID, indexed; not an enforced foreign key).
+    request_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), index=True)
     status_code: Mapped[int | None] = mapped_column(Integer, index=True)
     error_code: Mapped[str | None] = mapped_column(String(100), index=True)
 
@@ -31,12 +38,8 @@ class ExceptionLog(AuditMixin, Base):
     path: Mapped[str | None] = mapped_column(String(2048))
     route: Mapped[str | None] = mapped_column(String(512))
     endpoint: Mapped[str | None] = mapped_column(String(512))
-    client_ip: Mapped[str | None] = mapped_column(String(64))
-    user_agent: Mapped[str | None] = mapped_column(String(512))
 
-    query_params: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    request_headers: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    request_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # Error context, e.g. {"order_id": ...} or validation errors (loc/msg/type, no input).
     details: Mapped[Any | None] = mapped_column(JSONB)
 
     environment: Mapped[str | None] = mapped_column(String(50))

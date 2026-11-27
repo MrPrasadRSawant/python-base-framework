@@ -1,7 +1,7 @@
 """Assigns a request id to every HTTP request.
 
-* Reuses a valid incoming ``X-Request-ID`` (so ids flow across services),
-  otherwise generates one.
+* Reuses an incoming ``X-Request-ID`` if it is a UUID (so ids flow across
+  services), otherwise generates a UUIDv7.
 * Exposes it through a ContextVar (for logging) and ``request.state.request_id``.
 * Echoes it in the response header, error responses included.
 * Keeps a bounded copy of the request body so error logs can include it
@@ -20,9 +20,11 @@ from app.core.request_context import (
     REQUEST_BODY_TRUNCATED_STATE_KEY,
     REQUEST_ID_STATE_KEY,
     generate_request_id,
-    is_valid_request_id,
+    parse_request_id,
+    reset_call_counter,
     reset_request_id,
     set_request_id,
+    start_call_counter,
 )
 
 _CAPTURABLE_CONTENT_TYPES = ("application/json", "application/x-www-form-urlencoded", "text/")
@@ -48,7 +50,9 @@ class RequestContextMiddleware:
 
         headers = Headers(scope=scope)
         incoming = headers.get(self.header_name)
-        request_id = incoming if is_valid_request_id(incoming) else generate_request_id()
+        # Reuse a client-sent UUID (normalized), else generate one. The id is also the
+        # primary key of this request's row in the `requests` table.
+        request_id = parse_request_id(incoming) or generate_request_id()
 
         state = scope.setdefault("state", {})
         state[REQUEST_ID_STATE_KEY] = request_id
@@ -75,7 +79,9 @@ class RequestContextMiddleware:
             await send(message)
 
         token = set_request_id(request_id)
+        counter_token = start_call_counter()  # numbers tracked service calls 1, 2, 3...
         try:
             await self.app(scope, receive_wrapper, send_wrapper)
         finally:
+            reset_call_counter(counter_token)
             reset_request_id(token)

@@ -8,7 +8,11 @@ os.environ["LOG_TO_FILE"] = "false"
 os.environ["DEBUG"] = "false"
 # Tests never touch the real DB; the exception_log handler is tested with a fake sink.
 os.environ["EXCEPTION_LOG_DB_ENABLED"] = "false"
-os.environ["EXCEPTION_LOG_API_ENABLED"] = "true"  # so its endpoints can be tested
+os.environ["REQUEST_LOG_DB_ENABLED"] = "false"
+os.environ["SERVICE_CALL_LOG_DB_ENABLED"] = "false"
+os.environ["EXCEPTION_LOG_API_ENABLED"] = "true"  # so their endpoints can be tested
+os.environ["REQUEST_LOG_API_ENABLED"] = "true"
+os.environ["SERVICE_CALL_LOG_API_ENABLED"] = "true"
 
 import pytest  # noqa: E402
 from fastapi import APIRouter  # noqa: E402
@@ -48,8 +52,11 @@ app.include_router(test_router)
 
 
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(app)
+def client():
+    # Run the app's lifespan so its shutdown disposes the DB pool on the same
+    # event loop that opened the connections (avoids asyncpg cross-loop warnings).
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 @pytest.fixture
@@ -75,7 +82,7 @@ class FakeSink:
         self.rows: list[dict] = []
 
     def enqueue(self, row: dict) -> None:
-        self.rows.append(row)
+        self.rows.append(row.model_dump())
 
 
 @pytest.fixture
@@ -104,7 +111,7 @@ async def db_session_factory():
         await engine.dispose()
         pytest.skip(f"database not reachable: {exc}")
     has_tables = (
-        await conn.execute(text("select to_regclass('items') is not null"))
+        await conn.execute(text("select to_regclass('exception_log') is not null"))
     ).scalar_one()
     if not has_tables:
         await conn.close()
@@ -151,6 +158,20 @@ def db_rows():
 
     sink = FakeSink()
     handler = ExceptionLogDBHandler(sink, get_redactor(), min_status=400, environment="test")
+    handler.addFilter(RequestIdFilter())
+    root = logging.getLogger()
+    root.addHandler(handler)
+    yield sink.rows
+    root.removeHandler(handler)
+
+
+@pytest.fixture
+def request_rows():
+    """Attach the real RequestLogDBHandler with an in-memory sink."""
+    from app.core.logging.db_handler import RequestLogDBHandler
+
+    sink = FakeSink()
+    handler = RequestLogDBHandler(sink, exclude_paths=["/api/v1/health"])
     handler.addFilter(RequestIdFilter())
     root = logging.getLogger()
     root.addHandler(handler)

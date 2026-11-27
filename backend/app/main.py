@@ -8,9 +8,13 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import setup_logging
+from app.core.logging.db_sink import (
+    exception_log_sink,
+    request_log_sink,
+    service_call_log_sink,
+)
 from app.db.session import engine
 from app.middleware import register_middleware
-from app.services.exception_log_sink import exception_log_sink
 
 setup_logging(settings)
 logger = logging.getLogger(__name__)
@@ -21,8 +25,15 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     logger.info("Starting %s (%s)", settings.APP_NAME, settings.ENVIRONMENT)
     if settings.EXCEPTION_LOG_DB_ENABLED:
         await exception_log_sink.start()
+    if settings.REQUEST_LOG_DB_ENABLED:
+        await request_log_sink.start()
+    if settings.SERVICE_CALL_LOG_DB_ENABLED:
+        await service_call_log_sink.start()
     yield
-    await exception_log_sink.stop()  # flush queued exception rows first
+    # Flush queued log rows before closing the DB pool.
+    await service_call_log_sink.stop()
+    await request_log_sink.stop()
+    await exception_log_sink.stop()
     await engine.dispose()
     logger.info("Shutdown complete")
 

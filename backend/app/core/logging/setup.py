@@ -35,6 +35,7 @@ def setup_logging(settings: Settings) -> None:
     request_id_filter = RequestIdFilter()
 
     console = logging.StreamHandler(sys.stdout)
+    console.setLevel(level)
     console.setFormatter(
         JsonFormatter(redactor) if settings.LOG_FORMAT == "json" else TextFormatter(redactor)
     )
@@ -45,21 +46,35 @@ def setup_logging(settings: Settings) -> None:
         handlers.append(_file_handler(settings, APP_LOG_FILE, level))
         handlers.append(_file_handler(settings, ERROR_LOG_FILE, logging.ERROR))
 
-    if settings.EXCEPTION_LOG_DB_ENABLED:
-        from app.core.logging.db_handler import ExceptionLogDBHandler
-        from app.services.exception_log_sink import exception_log_sink
+    from app.core.logging.db_sink import ALL_SINKS
 
-        exception_log_sink.max_queue = settings.EXCEPTION_LOG_QUEUE_SIZE
-        exception_log_sink.batch_size = settings.EXCEPTION_LOG_BATCH_SIZE
-        exception_log_sink.flush_interval = settings.EXCEPTION_LOG_FLUSH_INTERVAL
-        handlers.append(
-            ExceptionLogDBHandler(
-                exception_log_sink,
-                redactor,
-                min_status=settings.EXCEPTION_LOG_DB_MIN_STATUS,
-                environment=settings.ENVIRONMENT,
+    for sink in ALL_SINKS:
+        sink.max_queue = settings.DB_LOG_QUEUE_SIZE
+        sink.batch_size = settings.DB_LOG_BATCH_SIZE
+        sink.flush_interval = settings.DB_LOG_FLUSH_INTERVAL
+
+    if settings.EXCEPTION_LOG_DB_ENABLED or settings.REQUEST_LOG_DB_ENABLED:
+        from app.core.logging.db_handler import ExceptionLogDBHandler, RequestLogDBHandler
+        from app.core.logging.db_sink import exception_log_sink, request_log_sink
+
+        if settings.EXCEPTION_LOG_DB_ENABLED:
+            handlers.append(
+                ExceptionLogDBHandler(
+                    exception_log_sink,
+                    redactor,
+                    min_status=settings.EXCEPTION_LOG_DB_MIN_STATUS,
+                    environment=settings.ENVIRONMENT,
+                )
             )
-        )
+        if settings.REQUEST_LOG_DB_ENABLED:
+            handlers.append(
+                RequestLogDBHandler(
+                    request_log_sink, exclude_paths=settings.REQUEST_LOG_EXCLUDE_PATHS
+                )
+            )
+            # Access lines are INFO; keep them flowing to request_logs even when
+            # LOG_LEVEL is WARNING (console/file handlers still filter by LOG_LEVEL).
+            logging.getLogger("app.access").setLevel(logging.INFO)
 
     root = logging.getLogger()
     for existing in root.handlers[:]:

@@ -1,6 +1,8 @@
 from app.core.config import settings
 
 HEADER = settings.REQUEST_ID_HEADER
+RID_1 = "0192f5f0-0000-7000-8000-000000000001"
+RID_2 = "0192f5f0-0000-7000-8000-000000000002"
 
 
 def _exception_logs(json_logs):
@@ -8,23 +10,23 @@ def _exception_logs(json_logs):
 
 
 def test_unhandled_exception_returns_500_envelope(client):
-    response = client.get("/_test/boom", headers={HEADER: "trace-boom-0001"})
+    response = client.get("/_test/boom", headers={HEADER: RID_1})
     assert response.status_code == 500
     error = response.json()["error"]
     assert error["code"] == "internal_server_error"
-    assert response.json()["metadata"]["request_id"] == "trace-boom-0001"
+    assert response.json()["metadata"]["request_id"] == RID_1
     assert "timestamp" in response.json()["metadata"]
-    assert response.headers[HEADER] == "trace-boom-0001"
+    assert response.headers[HEADER] == RID_1
     assert "hunter2" not in response.text  # internals never reach the client
 
 
 def test_unhandled_exception_logged_once_with_request_id_and_traceback(client, json_logs):
-    client.get("/_test/boom", headers={HEADER: "trace-boom-0002"})
+    client.get("/_test/boom", headers={HEADER: RID_2})
     logs = _exception_logs(json_logs)
     assert len(logs) == 1
     log = logs[0]
     assert log["level"] == "ERROR"
-    assert log["request_id"] == "trace-boom-0002"
+    assert log["request_id"] == RID_2
     assert log["exception"]["type"] == "RuntimeError"
     assert "Traceback" in log["exception"]["traceback"]
     assert log["context"]["request"]["route"] == "/_test/boom"

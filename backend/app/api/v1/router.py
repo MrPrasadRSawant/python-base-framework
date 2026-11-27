@@ -2,7 +2,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import exception_logs, health, items
+from app.api.v1.endpoints import exception_logs, health, request_logs, service_call_logs
 from app.core.config import settings
 from app.schemas.error import ErrorResponse
 
@@ -20,6 +20,9 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 api_router = APIRouter(responses=ERROR_RESPONSES)
 api_router.include_router(health.router, tags=["health"])
-api_router.include_router(items.router)
 if settings.EXCEPTION_LOG_API_ENABLED:
     api_router.include_router(exception_logs.router)
+if settings.REQUEST_LOG_API_ENABLED:
+    api_router.include_router(request_logs.router)
+if settings.SERVICE_CALL_LOG_API_ENABLED:
+    api_router.include_router(service_call_logs.router)

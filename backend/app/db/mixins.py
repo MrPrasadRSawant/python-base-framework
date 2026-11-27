@@ -1,4 +1,4 @@
-"""Common columns shared by every table.
+"""Common columns required on every table.
 
     class Order(AuditMixin, Base):
         __tablename__ = "orders"
@@ -11,8 +11,6 @@ Columns:
     updated_by  who last updated the row (set automatically on UPDATE)
     updated_on  UTC timestamp of the last update (NULL until first update)
     is_deleted  soft-delete flag
-    deleted_by  who soft-deleted the row
-    deleted_on  UTC timestamp of the soft delete
 """
 
 import uuid
@@ -67,15 +65,9 @@ class AuditMixin:
     is_deleted: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), index=True, sort_order=1005
     )
-    deleted_by: Mapped[str | None] = mapped_column(String(ACTOR_LENGTH), sort_order=1006)
-    deleted_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), sort_order=1007)
 
-    def soft_delete(self, actor: str | None = None) -> None:
+    def soft_delete(self) -> None:
         self.is_deleted = True
-        self.deleted_by = actor or get_current_actor()
-        self.deleted_on = utc_now()
 
     def restore(self) -> None:
         self.is_deleted = False
-        self.deleted_by = None
-        self.deleted_on = None
