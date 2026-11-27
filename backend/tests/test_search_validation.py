@@ -1,6 +1,7 @@
 """Search payload validation and SQL generation. No database needed:
 everything here is rejected (or built) before a query runs."""
 
+import pytest
 from sqlalchemy.dialects import postgresql
 
 from app.core.config import settings
@@ -107,3 +108,10 @@ def test_typo_in_service_field_lists_fails_at_definition():
         class BrokenService(BaseService):
             model = ExceptionLogService.model
             filter_fields = ("status_cod",)
+
+
+@pytest.fixture
+def client(client, admin_headers):
+    """The log APIs need *_logs:read: call them as an admin."""
+    client.headers.update(admin_headers)
+    return client

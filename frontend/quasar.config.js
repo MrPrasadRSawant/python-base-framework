@@ -11,7 +11,9 @@ export default defineConfig((/* ctx */) => {
     // app boot file (/src/boot)
     // --> boot files are part of "main.js"
     // https://v2.quasar.dev/quasar-cli-vite/boot-files
-    boot: ['axios'],
+    // errors: global handler for unhandled errors (toast + console)
+    // modules: runs every module's install() (auth wiring, guards, directives)
+    boot: ['errors', 'modules'],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
     css: ['app.scss'],
@@ -76,11 +78,21 @@ export default defineConfig((/* ctx */) => {
       // https: true,
       port: 9000,
       open: true, // opens browser window automatically
+      // The app calls /api/v1/... on its own origin; in development this forwards
+      // to FastAPI, so the refresh cookie is first-party (no CORS / SameSite issues).
+      proxy: {
+        '/api': {
+          target: process.env.QCLI_API_PROXY_TARGET || 'http://localhost:8000',
+          changeOrigin: true,
+        },
+      },
     },
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#framework
     framework: {
-      config: {},
+      config: {
+        dark: 'auto', // follow the OS; the header button toggles it
+      },
 
       // iconSet: 'material-icons', // Quasar icon set
       // lang: 'en-US', // Quasar language pack
@@ -93,7 +105,7 @@ export default defineConfig((/* ctx */) => {
       // directives: [],
 
       // Quasar plugins
-      plugins: [],
+      plugins: ['Notify', 'Dialog'],
     },
 
     // animations: 'all', // --- includes all animations

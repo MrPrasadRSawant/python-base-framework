@@ -1,38 +1,25 @@
-# Base App (frontend)
+# Baseframe frontend
 
-## Install the dependencies
+Quasar and Vue frontend for the Python Base Framework. The signed-in shell, authentication, shared components, and API client are organized by feature under `src/module` and `src/api`.
 
-```bash
-pnpm install
-# or: yarn/npm/bun install
-```
-
-### Start the app in development mode (HMR, error reporting, etc.)
+## Run
 
 ```bash
-quasar dev
+npm install
+npm run dev
 ```
 
-### Format & Lint the files
+The development server runs on port 9000 and forwards `/api` requests to `http://localhost:8000`. Set `QCLI_API_PROXY_TARGET` when the backend uses another address.
+
+## Verify
 
 ```bash
-pnpm run lint
-# or: yarn/npm/bun run lint
+npm run check
+npm run build
 ```
 
-...or just check formatting & linting:
+`check` runs formatting, ESLint, the color token rule, and Vitest. The production build is written to `dist/spa`.
 
-```bash
-pnpm run lint:check
-# or: yarn/npm/bun run lint:check
-```
+## Customize
 
-### Build the app for production
-
-```bash
-quasar build
-```
-
-### Customize the configuration
-
-See [Configuring quasar.config.js](https://v2.quasar.dev/quasar-cli-vite/quasar-config-file).
+Design tokens are in `src/css/quasar.variables.scss`. The logo is `public/icons/baseframe-mark.svg`, and the displayed name is set with `QCLI_APP_NAME`. See `../documentation/frontend_architecture/` for the module and component conventions.

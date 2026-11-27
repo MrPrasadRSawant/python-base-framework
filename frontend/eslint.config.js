@@ -4,6 +4,8 @@ import pluginVue from 'eslint-plugin-vue'
 import pluginQuasar from '@quasar/app-vite/eslint'
 import prettierSkipFormatting from '@vue/eslint-config-prettier/skip-formatting'
 
+import moduleBoundaries from './eslint-rules/module-boundaries.js'
+
 export default [
   {
     /**
@@ -60,6 +62,25 @@ export default [
       // allow debugger during development only
       'no-debugger': process.env.NODE_ENV === 'production' ? 'error' : 'off',
     },
+  },
+
+  // ---- Architecture rules (documentation/frontend_architecture) ------------
+  {
+    files: ['src/**/*.{js,vue}'],
+    plugins: { app: { rules: { 'module-boundaries': moduleBoundaries } } },
+    rules: {
+      // Modules are used only through '@/module/<name>'.
+      'app/module-boundaries': 'error',
+      // All HTTP goes through src/api (token, refresh, ApiError).
+      'no-restricted-imports': [
+        'error',
+        { paths: [{ name: 'axios', message: "Use '@/api' (src/api/http.js) instead of axios." }] },
+      ],
+    },
+  },
+  {
+    files: ['src/api/**/*.js'],
+    rules: { 'no-restricted-imports': 'off' },
   },
 
   {

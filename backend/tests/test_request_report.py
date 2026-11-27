@@ -256,3 +256,10 @@ async def test_api_report_list_with_filters(api, seed_report):
         json={"filters": [mine, {"field": "status_code", "op": "gte", "value": 400}]},
     )
     assert [x["request_id"] for x in only_failures.json()["records"]] == [str(failed)]
+
+
+@pytest.fixture
+def api(api, admin_headers):
+    """The log APIs need *_logs:read: call them as an admin."""
+    api.headers.update(admin_headers)
+    return api
