@@ -1,19 +1,21 @@
 import asyncio
 import logging
+import uuid
 
 from app.core.config import settings
 from app.core.logging.db_sink import DBLogSink
 from app.models import ExceptionLog
 
 HEADER = settings.REQUEST_ID_HEADER
+RID = "0192f5f0-0000-7000-8000-0000000000db"
 
 
 # ------------------------------------------------------------ handler -> row
 def test_unhandled_exception_becomes_one_row(client, db_rows):
-    client.get("/_test/boom", headers={HEADER: "trace-db-0001", "User-Agent": "pytest-ua"})
+    client.get("/_test/boom", headers={HEADER: RID, "User-Agent": "pytest-ua"})
     assert len(db_rows) == 1
     row = db_rows[0]
-    assert row["request_id"] == "trace-db-0001"
+    assert row["request_id"] == uuid.UUID(RID)
     assert row["status_code"] == 500
     assert row["error_code"] == "internal_server_error"
     assert row["exception_type"] == "RuntimeError"
@@ -40,7 +42,7 @@ def test_client_errors_are_stored_without_traceback(client, db_rows):
     assert row["exception_type"] == "NotFoundError"
     assert row["traceback"] is None
     assert row["details"] == {"thing_id": 9}
-    assert row["request_id"] == response.headers[HEADER]
+    assert str(row["request_id"]) == response.headers[HEADER]
 
 
 USER_DATA_COLUMNS = {"query_params", "request_headers", "request_body", "client_ip", "user_agent"}
@@ -195,3 +197,13 @@ def test_create_schema_rejects_unknown_fields_and_validates_lengths():
         ExceptionLogCreate(**base, request_body={"password": "x"})  # extra="forbid"
     with pytest.raises(ValidationError):
         ExceptionLogCreate(**{**base, "level": "X" * 21})
+
+
+def test_stored_message_is_the_reason_without_the_url(client, db_rows):
+    client.get("/_test/missing/424242")
+    row = db_rows[-1]
+    assert row["message"] == "Thing not found"
+    assert "424242" not in row["message"]
+
+    client.get("/_test/boom")
+    assert db_rows[-1]["message"] == "connection failed for postgresql://app:[REDACTED]@db/app"

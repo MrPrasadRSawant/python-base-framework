@@ -46,14 +46,16 @@ def setup_logging(settings: Settings) -> None:
         handlers.append(_file_handler(settings, APP_LOG_FILE, level))
         handlers.append(_file_handler(settings, ERROR_LOG_FILE, logging.ERROR))
 
+    from app.core.logging.db_sink import ALL_SINKS
+
+    for sink in ALL_SINKS:
+        sink.max_queue = settings.DB_LOG_QUEUE_SIZE
+        sink.batch_size = settings.DB_LOG_BATCH_SIZE
+        sink.flush_interval = settings.DB_LOG_FLUSH_INTERVAL
+
     if settings.EXCEPTION_LOG_DB_ENABLED or settings.REQUEST_LOG_DB_ENABLED:
         from app.core.logging.db_handler import ExceptionLogDBHandler, RequestLogDBHandler
         from app.core.logging.db_sink import exception_log_sink, request_log_sink
-
-        for sink in (exception_log_sink, request_log_sink):
-            sink.max_queue = settings.DB_LOG_QUEUE_SIZE
-            sink.batch_size = settings.DB_LOG_BATCH_SIZE
-            sink.flush_interval = settings.DB_LOG_FLUSH_INTERVAL
 
         if settings.EXCEPTION_LOG_DB_ENABLED:
             handlers.append(

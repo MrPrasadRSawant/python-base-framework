@@ -6,7 +6,6 @@ from app.services.base import AUDIT_FIELDS, BaseService
 class RequestLogService(BaseService):
     model = RequestLog
     filter_fields = (
-        "request_id",
         "method",
         "route",
         "endpoint",
@@ -16,5 +15,5 @@ class RequestLogService(BaseService):
         *AUDIT_FIELDS,
     )
     sort_fields = ("started_on", "duration_ms", "status_code", "route")
-    search_fields = ("route", "endpoint", "request_id")
+    search_fields = ("route", "endpoint")
     default_sort = (("started_on", SortDirection.DESC),)

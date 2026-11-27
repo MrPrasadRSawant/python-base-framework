@@ -23,7 +23,7 @@ def prefix() -> str:
 
 @pytest.fixture
 def seed(db_session_factory, prefix):
-    """Insert exception_log rows whose request_id starts with the test prefix."""
+    """Insert exception_log rows tagged via `endpoint` (starts with the test prefix)."""
 
     async def _seed(*rows: dict) -> list[ExceptionLog]:
         now = datetime.now(UTC)
@@ -32,7 +32,7 @@ def seed(db_session_factory, prefix):
                 occurred_on=row.pop("occurred_on", now),
                 level=row.pop("level", "ERROR"),
                 logger="app.exceptions",
-                request_id=f"{prefix}{row.pop('rid')}",
+                endpoint=f"{prefix}{row.pop('rid')}",
                 message=row.pop("message", "boom"),
                 **row,
             )
@@ -53,7 +53,7 @@ async def _search(api, payload):
 
 
 def _mine(prefix, **extra):
-    return {"filters": [{"field": "request_id", "op": "starts_with", "value": prefix}], **extra}
+    return {"filters": [{"field": "endpoint", "op": "starts_with", "value": prefix}], **extra}
 
 
 async def test_pagination_metadata_and_pages(api, seed, prefix):
@@ -100,13 +100,13 @@ async def test_free_text_search_is_case_insensitive_across_fields(api, seed, pre
         {"rid": "c", "exception_type": "MagicError"},
     )
     page = await _search(api, _mine(prefix, search="magic"))
-    assert sorted(r["request_id"].removeprefix(prefix) for r in page["records"]) == ["a", "c"]
+    assert sorted(r["endpoint"].removeprefix(prefix) for r in page["records"]) == ["a", "c"]
 
 
 async def test_wildcards_in_search_match_literally(api, seed, prefix):
     await seed({"rid": "a", "message": "100%_off"}, {"rid": "b", "message": "100 percent"})
     page = await _search(api, _mine(prefix, search="%_"))
-    assert [r["request_id"].removeprefix(prefix) for r in page["records"]] == ["a"]
+    assert [r["endpoint"].removeprefix(prefix) for r in page["records"]] == ["a"]
 
 
 async def test_filter_operators(api, seed, prefix):
@@ -119,7 +119,7 @@ async def test_filter_operators(api, seed, prefix):
 
     async def rids(*filters):
         page = await _search(api, {"filters": [*_mine(prefix)["filters"], *filters]})
-        return sorted(r["request_id"].removeprefix(prefix) for r in page["records"])
+        return sorted(r["endpoint"].removeprefix(prefix) for r in page["records"])
 
     assert await rids({"field": "id", "op": "eq", "value": str(a.id)}) == ["a"]
     assert await rids({"field": "status_code", "op": "in", "value": [404, 422]}) == ["a", "c"]
@@ -135,7 +135,7 @@ async def test_filter_operators(api, seed, prefix):
 async def test_soft_deleted_hidden_unless_requested(api, seed, prefix):
     await seed({"rid": "keep"}, {"rid": "gone", "is_deleted": True})
     visible = await _search(api, _mine(prefix))
-    assert [r["request_id"].removeprefix(prefix) for r in visible["records"]] == ["keep"]
+    assert [r["endpoint"].removeprefix(prefix) for r in visible["records"]] == ["keep"]
     everything = await _search(api, _mine(prefix, include_deleted=True))
     assert everything["metadata"]["total_count"] == 2
 
@@ -180,7 +180,7 @@ async def test_base_service_crud(db_session_factory, prefix):
                 occurred_on=datetime.now(UTC),
                 level="ERROR",
                 logger="app.exceptions",
-                request_id=f"{prefix}svc",
+                endpoint=f"{prefix}svc",
                 message="  boom  ",  # CreateSchema trims whitespace
             )
         )
@@ -191,7 +191,7 @@ async def test_base_service_crud(db_session_factory, prefix):
                     occurred_on=datetime.now(UTC),
                     level="ERROR",
                     logger="app.jobs",
-                    request_id="other-request",
+                    endpoint="other.endpoint",
                     message="not mine",
                 )
             ]
@@ -200,7 +200,7 @@ async def test_base_service_crud(db_session_factory, prefix):
         assert result.total_count == 1
         row = result.records[0]
         assert row.created_by == "system" and row.is_deleted is False
-        assert (await service.get(row.id)).request_id == f"{prefix}svc"
+        assert (await service.get(row.id)).endpoint == f"{prefix}svc"
 
         # update: only fields that were sent change
         updated = await service.update(row.id, MessageUpdate(message="edited"))

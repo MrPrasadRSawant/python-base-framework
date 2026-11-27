@@ -22,5 +22,5 @@ class ExceptionLogService(BaseService):
         *AUDIT_FIELDS,
     )
     sort_fields = ("occurred_on", "created_on", "status_code", "error_code", "exception_type")
-    search_fields = ("message", "path", "exception_type", "error_code", "request_id")
+    search_fields = ("message", "path", "exception_type", "error_code")
     default_sort = (("occurred_on", SortDirection.DESC),)

@@ -1,4 +1,5 @@
-"""Non-blocking, batched writers for the log tables (exception_log, request_logs).
+"""Non-blocking, batched writers for the log tables
+(exception_log, request_logs, service_call_logs).
 
 Requests never wait on the database to record a log row, and a database
 outage never breaks a request:
@@ -168,23 +169,34 @@ class DBLogSink:
 # --------------------------------------------------------------------- writers
 # Lazy imports avoid a cycle (logging is set up before the DB layer loads).
 # Each batch uses its own session: the request's may have been rolled back.
+# Tracking is suppressed so saving log rows never creates service_call_logs rows.
+
+
+async def _save(service_path: str, service_class: str, rows: Sequence[Any]) -> None:
+    import importlib
+
+    from app.core.service_tracking import suppress_service_tracking
+    from app.db.session import SessionLocal
+
+    service = getattr(importlib.import_module(service_path), service_class)
+    with suppress_service_tracking():
+        async with SessionLocal() as session:
+            await service(session).create_many(list(rows))
 
 
 async def _write_exception_logs(rows: Sequence[Any]) -> None:
-    from app.db.session import SessionLocal
-    from app.services.exception_log import ExceptionLogService
-
-    async with SessionLocal() as session:
-        await ExceptionLogService(session).create_many(list(rows))
+    await _save("app.services.exception_log", "ExceptionLogService", rows)
 
 
 async def _write_request_logs(rows: Sequence[Any]) -> None:
-    from app.db.session import SessionLocal
-    from app.services.request_log import RequestLogService
+    await _save("app.services.request_log", "RequestLogService", rows)
 
-    async with SessionLocal() as session:
-        await RequestLogService(session).create_many(list(rows))
+
+async def _write_service_call_logs(rows: Sequence[Any]) -> None:
+    await _save("app.services.service_call_log", "ServiceCallLogService", rows)
 
 
 exception_log_sink = DBLogSink("exception_log", _write_exception_logs)
 request_log_sink = DBLogSink("request_logs", _write_request_logs)
+service_call_log_sink = DBLogSink("service_call_logs", _write_service_call_logs)
+ALL_SINKS = (exception_log_sink, request_log_sink, service_call_log_sink)

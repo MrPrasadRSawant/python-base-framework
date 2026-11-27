@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 
 from pydantic import Field
@@ -9,8 +10,8 @@ from app.schemas.base import CreateSchema, ResponseSchema
 class RequestLogCreate(CreateSchema):
     """One request row, built from the access log line. No RequestLogUpdate: append-only."""
 
+    id: uuid.UUID  # the request id itself
     started_on: datetime
-    request_id: str = Field(max_length=128)
     method: str = Field(max_length=16)
     route: str | None = Field(None, max_length=512)
     endpoint: str | None = Field(None, max_length=512)
@@ -22,7 +23,6 @@ class RequestLogCreate(CreateSchema):
 
 class RequestLogResponse(ResponseSchema):
     started_on: datetime
-    request_id: str
     method: str
     route: str | None
     endpoint: str | None

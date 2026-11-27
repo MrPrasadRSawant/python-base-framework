@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -17,7 +18,7 @@ class ExceptionLogCreate(CreateSchema):
     level: str = Field(max_length=20)
     logger: str = Field(max_length=255)
     source: str | None = Field(None, max_length=512)
-    request_id: str | None = Field(None, max_length=128)
+    request_id: uuid.UUID | None = None
     status_code: int | None = None
     error_code: str | None = Field(None, max_length=100)
     exception_type: str | None = Field(None, max_length=255)
@@ -40,7 +41,7 @@ class ExceptionLogResponse(ResponseSchema):
     level: str
     logger: str
     source: str | None
-    request_id: str | None
+    request_id: uuid.UUID | None
     status_code: int | None
     error_code: str | None
     exception_type: str | None

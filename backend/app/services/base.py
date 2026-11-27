@@ -19,9 +19,10 @@ Subclass it, point it at a model and list which fields may be used:
 import uuid
 from typing import Any
 
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Select, String, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.service_tracking import track_service
 from app.db.search import SearchResult, escape_like, filter_condition, invalid_search
 from app.schemas.base import CreateSchema, UpdateSchema
 from app.schemas.search import SearchRequest, SortDirection
@@ -47,17 +48,24 @@ class BaseService:
         missing = sorted(name for name in names if not hasattr(cls.model, name))
         if missing:
             raise TypeError(f"{cls.__name__}: {cls.model.__name__} has no field(s) {missing}")
+        not_text = [
+            f for f in cls.search_fields if not isinstance(getattr(cls.model, f).type, String)
+        ]
+        if not_text:
+            raise TypeError(f"{cls.__name__}: search_fields must be text columns, not {not_text}")
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
     # ------------------------------------------------------------------ CRUD
+    @track_service
     async def get(self, record_id: uuid.UUID, *, include_deleted: bool = False) -> Any | None:
         record = await self.db.get(self.model, record_id)
         if record is None or (record.is_deleted and not include_deleted):
             return None
         return record
 
+    @track_service
     async def create(self, data: CreateSchema) -> Any:
         record = self.model(**data.model_dump())
         self.db.add(record)
@@ -65,10 +73,12 @@ class BaseService:
         await self.db.refresh(record)
         return record
 
+    @track_service
     async def create_many(self, items: list[CreateSchema]) -> None:
         self.db.add_all([self.model(**item.model_dump()) for item in items])
         await self.db.commit()
 
+    @track_service
     async def update(self, record_id: uuid.UUID, data: UpdateSchema) -> Any | None:
         """Apply only the fields the client sent. Returns None if not found."""
         record = await self.get(record_id)
@@ -80,6 +90,7 @@ class BaseService:
         await self.db.refresh(record)
         return record
 
+    @track_service
     async def delete(self, record_id: uuid.UUID) -> bool:
         """Soft delete. Returns False if not found."""
         record = await self.get(record_id)
@@ -90,6 +101,7 @@ class BaseService:
         return True
 
     # ---------------------------------------------------------------- search
+    @track_service
     async def search(self, request: SearchRequest) -> SearchResult:
         query, sort = self.build_query(request)
 

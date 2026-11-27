@@ -29,7 +29,7 @@ from typing import Any, Protocol
 
 from app.core.logging.db_sink import SINK_LOGGER_NAME
 from app.core.redaction import Redactor
-from app.core.request_context import get_current_actor
+from app.core.request_context import get_current_actor, request_id_as_uuid
 from app.schemas.exception_log import ExceptionLogCreate
 from app.schemas.request_log import RequestLogCreate
 
@@ -114,11 +114,12 @@ class ExceptionLogDBHandler(logging.Handler):
             level=record.levelname,
             logger=_cut(record.name, 255),
             source=_cut(f"{record.module}:{record.funcName}:{record.lineno}", 512),
-            request_id=_cut(getattr(record, "request_id", None) or None, 128),
+            request_id=request_id_as_uuid(getattr(record, "request_id", None)),
             status_code=getattr(record, "status_code", None),
             error_code=_cut(getattr(record, "error_code", None), 100),
             exception_type=_cut(exc_type_name, 255),
-            message=r.redact_text(record.getMessage()),
+            # API errors: the bare reason; other records (jobs, startup): the log message.
+            message=r.redact_text(getattr(record, "reason", None) or record.getMessage()),
             traceback=tb_text,
             method=_cut(request.get("method"), 16),
             path=_cut(request.get("path"), 2048),
@@ -146,18 +147,23 @@ class RequestLogDBHandler(logging.Handler):
             # The path is only read for this check, never stored.
             if getattr(record, "path", None) in self.exclude_paths:
                 return
-            self.sink.enqueue(self.build_row(record))
+            row = self.build_row(record)
+            if row is not None:
+                self.sink.enqueue(row)
         except Exception:
             self.handleError(record)
 
-    def build_row(self, record: logging.LogRecord) -> RequestLogCreate:
+    def build_row(self, record: logging.LogRecord) -> RequestLogCreate | None:
+        request_id = request_id_as_uuid(getattr(record, "request_id", None))
+        if request_id is None:
+            return None  # not an HTTP request handled by RequestContextMiddleware
         duration_ms = float(getattr(record, "duration_ms", 0.0))
         # The access line is written when the request ends; derive the start time.
         finished = datetime.fromtimestamp(record.created, UTC)
         return RequestLogCreate(
             created_by=_cut(get_current_actor(), 255),  # captured in the request's context
+            id=request_id,  # the request id is the row's primary key
             started_on=finished - timedelta(milliseconds=duration_ms),
-            request_id=_cut(getattr(record, "request_id", None) or "-", 128),
             method=_cut(getattr(record, "method", None) or "-", 16),
             route=_cut(getattr(record, "route", None), 512),
             endpoint=_cut(getattr(record, "endpoint", None), 512),

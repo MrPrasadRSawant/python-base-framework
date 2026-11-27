@@ -1,7 +1,8 @@
+import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Integer, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,7 +25,8 @@ class ExceptionLog(AuditMixin, Base):
     logger: Mapped[str] = mapped_column(String(255))
     source: Mapped[str | None] = mapped_column(String(512))  # module:function:line
 
-    request_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    # Logical link to requests.id (same UUID, indexed; not an enforced foreign key).
+    request_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), index=True)
     status_code: Mapped[int | None] = mapped_column(Integer, index=True)
     error_code: Mapped[str | None] = mapped_column(String(100), index=True)
 

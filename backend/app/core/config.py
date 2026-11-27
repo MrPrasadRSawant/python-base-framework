@@ -51,7 +51,8 @@ class Settings(BaseSettings):
     EXCEPTION_LOG_DB_MIN_STATUS: int = 400  # 500 -> store server errors only
     REQUEST_LOG_DB_ENABLED: bool = True
     REQUEST_LOG_EXCLUDE_PATHS: Annotated[list[str], NoDecode] = ["/api/v1/health"]
-    # Background writer used by both tables
+    SERVICE_CALL_LOG_DB_ENABLED: bool = True  # rows from @track_service
+    # Background writer shared by all log tables
     DB_LOG_QUEUE_SIZE: int = 10_000
     DB_LOG_BATCH_SIZE: int = 50
     DB_LOG_FLUSH_INTERVAL: float = 1.0  # seconds
@@ -59,6 +60,7 @@ class Settings(BaseSettings):
     # Read-only APIs over the log tables. Put them behind auth before enabling in production.
     EXCEPTION_LOG_API_ENABLED: bool = False
     REQUEST_LOG_API_ENABLED: bool = False
+    SERVICE_CALL_LOG_API_ENABLED: bool = False
 
     # --- Pagination / search ---
     PAGINATION_DEFAULT_LIMIT: int = 20

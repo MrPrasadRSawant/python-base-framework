@@ -6,7 +6,7 @@ It is also stored in ``scope["state"]``, so code that runs outside the
 ContextVar's lifetime can still find it.
 """
 
-import re
+import itertools
 import uuid
 from contextvars import ContextVar, Token
 from typing import Any
@@ -14,9 +14,6 @@ from typing import Any
 REQUEST_ID_STATE_KEY = "request_id"
 REQUEST_BODY_STATE_KEY = "request_body"
 REQUEST_BODY_TRUNCATED_STATE_KEY = "request_body_truncated"
-
-# Only accept safe client-supplied ids (prevents log injection and huge values).
-_VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9._\-]{8,128}$")
 
 SYSTEM_ACTOR = "system"
 
@@ -39,11 +36,29 @@ def reset_current_actor(token: Token) -> None:
 
 
 def generate_request_id() -> str:
-    return uuid.uuid4().hex
+    """A new request id. It is also the primary key of the request's row in ``requests``,
+    so it is a UUID: v7 (time-ordered) on Python 3.14+, else v4."""
+    return str(uuid.uuid7() if hasattr(uuid, "uuid7") else uuid.uuid4())
 
 
-def is_valid_request_id(value: str | None) -> bool:
-    return bool(value and _VALID_REQUEST_ID.match(value))
+def parse_request_id(value: str | None) -> str | None:
+    """Normalize a client-sent X-Request-ID, or None if it isn't a UUID.
+
+    Only UUIDs are accepted (any common spelling: upper case, no hyphens, braces),
+    which also rules out log injection and oversized values.
+    """
+    if not value or len(value) > 64:
+        return None
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        return None
+
+
+def request_id_as_uuid(value: str | None) -> uuid.UUID | None:
+    """For DB columns: the request id as a UUID, or None if absent/invalid."""
+    normalized = parse_request_id(value)
+    return uuid.UUID(normalized) if normalized else None
 
 
 def get_request_id() -> str | None:
@@ -56,6 +71,25 @@ def set_request_id(request_id: str) -> Token:
 
 def reset_request_id(token: Token) -> None:
     _request_id_ctx.reset(token)
+
+
+# Numbers tracked service calls 1, 2, 3... within one request. One counter object
+# per request, shared by every task/thread the request spawns.
+_call_counter_ctx: ContextVar[Any] = ContextVar("call_counter", default=None)
+
+
+def start_call_counter() -> Token:
+    return _call_counter_ctx.set(itertools.count(1))
+
+
+def reset_call_counter(token: Token) -> None:
+    _call_counter_ctx.reset(token)
+
+
+def next_call_order() -> int | None:
+    """Next service-call number in this request, or None outside a request."""
+    counter = _call_counter_ctx.get()
+    return next(counter) if counter is not None else None
 
 
 def request_id_from_scope(scope: dict[str, Any]) -> str | None:

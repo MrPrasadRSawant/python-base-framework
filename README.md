@@ -83,6 +83,8 @@ used. Every service then has the same methods:
 | `search(request)` | filters + text search + sort + limit/offset |
 
 A typo in `filter_fields` / `sort_fields` / `search_fields` fails at startup.
+All these methods are tracked in `service_call_logs` automatically; decorate your
+own service methods with `@track_service` (see below).
 
 ```python
 # models/order.py
@@ -166,10 +168,12 @@ app/middleware/
   __init__.py                       register_middleware(): order documented here
 ```
 
-**Request IDs.** Each request gets an id: a valid incoming `X-Request-ID` is reused,
-otherwise a new one is generated. The id goes into every log line written during that
-request (your own `logging.getLogger(__name__)` calls included), the `X-Request-ID`
-response header, and every error body.
+**Request IDs.** Each request gets a UUID: an incoming `X-Request-ID` is reused if it
+is a UUID (normalized to lowercase, hyphenated), otherwise a new time-ordered UUIDv7 is
+generated. The id goes into every log line written during that request (your own
+`logging.getLogger(__name__)` calls included), the `X-Request-ID` response header,
+every response's `metadata.request_id`, and it is the primary key of the request's
+row in the `requests` table.
 
 **Error responses** always look like:
 ```json
@@ -230,17 +234,17 @@ Code: `app/core/logging/db_handler.py` (record -> row),
 `app/core/logging/db_sink.py` (queue + worker),
 `app/services/exception_log.py` (insert / get / search), `app/models/exception_log.py`.
 
-### `request_logs` table
+### `requests` table
 
-One row per request, for endpoint monitoring: traffic, error rate and latency.
-It is built from the access-log line the middleware already writes, through the
-same kind of background batched writer (`request_log_sink`), so requests never
-wait on it.
+One row per request, for endpoint monitoring and reports: traffic, error rate and
+latency. Its `id` **is** the request id, so every log table joins to it. It is built
+from the access-log line the middleware already writes, through the same kind of
+background batched writer (`request_log_sink`), so requests never wait on it.
 
 | Column | Example |
 |---|---|
+| `id` | the request id: same as `X-Request-ID`, `metadata.request_id`, `exception_log.request_id`, `service_call_logs.request_id` |
 | `started_on` | exact request start (UTC); rows are written up to a second later |
-| `request_id` | same as the `X-Request-ID` header and `exception_log.request_id` |
 | `method` | `GET` |
 | `route` | `/api/v1/orders/{order_id}`: the template, never the actual URL; group by this for per-endpoint stats; `NULL` for unknown URLs |
 | `endpoint` | `app.api.v1.endpoints.orders.get_order` (the handler function) |
@@ -257,20 +261,133 @@ Typical monitoring queries:
 -- slowest endpoints in the last hour
 SELECT route, count(*), round(avg(duration_ms)) AS avg_ms,
        percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95_ms
-FROM request_logs WHERE started_on > now() - interval '1 hour'
+FROM requests WHERE started_on > now() - interval '1 hour'
 GROUP BY route ORDER BY p95_ms DESC;
 
 -- error rate per endpoint today
 SELECT route, count(*) FILTER (WHERE status_code >= 500) * 100.0 / count(*) AS pct_5xx
-FROM request_logs WHERE started_on > current_date GROUP BY route;
+FROM requests WHERE started_on > current_date GROUP BY route;
+
+-- reports: a request with every service call and error it produced
+SELECT r.id, r.route, r.status_code, r.duration_ms,
+       s.call_order, s.service_name, s.duration_ms AS service_ms, e.error_code
+FROM requests r
+LEFT JOIN service_call_logs s ON s.request_id = r.id
+LEFT JOIN exception_log e ON e.request_id = r.id
+WHERE r.started_on > current_date
+ORDER BY r.started_on, s.call_order;
 ```
 
-Read it over the API at `/api/v1/request-logs` (list / search / detail, see below)
-when `REQUEST_LOG_API_ENABLED=true`, or with SQL.
+The links from `exception_log.request_id` and `service_call_logs.request_id` to
+`requests.id` are **logical** (same UUID type, indexed, used in JOINs) rather than
+enforced foreign keys. The three tables are written by separate background writers,
+so a service call or exception row usually reaches the database before its request
+row, and health checks have no request row at all. An enforced foreign key would
+reject those rows.
+
+Read it over the API at `/api/v1/requests` (list / search / detail by request id,
+see below) when `REQUEST_LOG_API_ENABLED=true`, or with SQL.
 
 No automatic cleanup yet. The table grows by one row per request, so delete old
-rows (e.g. `DELETE FROM request_logs WHERE started_on < now() - interval '30 days'`)
+rows (e.g. `DELETE FROM requests WHERE started_on < now() - interval '30 days'`)
 or add a retention job once volume needs it.
+
+### `service_call_logs` table
+
+One row per call of a function decorated with `@track_service`, for service load
+monitoring: which services a request called, in what order, how long each took,
+and whether it succeeded. Every `BaseService` method (get / create / create_many /
+update / delete / search) is already decorated, so all table services are tracked.
+
+```python
+from app.core.service_tracking import track_service
+
+class OrderService(BaseService):
+    model = Order
+
+    @track_service                     # recorded as "OrderService.mark_paid"
+    async def mark_paid(self, order_id): ...
+
+@track_service(name="pricing.calculate")   # plain functions, sync or async
+def calculate_price(order): ...
+```
+
+| Column | Example |
+|---|---|
+| `request_id` | links to `requests.id` (and `exception_log.request_id`); `NULL` outside a request (jobs, startup) |
+| `call_order` | `1, 2, 3…` in the order calls started within the request |
+| `parent_call_order` | `call_order` of the tracked call that made this one; `NULL` = called by the endpoint |
+| `service_name` | `OrderService.mark_paid` (runtime class, so inherited methods show the real service) |
+| `started_on` / `duration_ms` | start time (UTC) and how long the call took |
+| `status` | `success`, or `failed` when the function raised (the error is re-raised unchanged) |
+| `error_type` | exception class only, e.g. `IntegrityError`; no message, arguments or return values |
+
+Nested tracked calls get their own rows (`update` calls `get`, so both appear).
+Rows go through the same background writer as the other log tables; the writers
+themselves are not tracked. Set `SERVICE_CALL_LOG_DB_ENABLED=false` to switch it off.
+
+```sql
+-- what one request did, step by step
+SELECT call_order, service_name, status, duration_ms
+FROM service_call_logs WHERE request_id = '3f2c...' ORDER BY call_order;
+
+-- busiest and slowest services in the last hour
+SELECT service_name, count(*) AS calls, round(avg(duration_ms)) AS avg_ms,
+       count(*) FILTER (WHERE status = 'failed') AS failures
+FROM service_call_logs WHERE started_on > now() - interval '1 hour'
+GROUP BY service_name ORDER BY calls DESC;
+```
+
+### Developer report
+
+Built from the three tables joined on the request id (`requests.id`):
+
+```
+requests                  status, route, duration, outcome
+ ├─ service_call_logs      each service: order, parent, duration, success/failed
+ └─ exception_log          failure reason: error code, exception type, message
+```
+
+| Endpoint | Answers |
+|---|---|
+| `GET /api/v1/requests/{request_id}/report` | one request: outcome, failure reason, every service call nested under its caller with total / own time / % of the request, the slowest step, time outside services |
+| `POST /api/v1/requests/report` | many requests (same filters / sort / paging as `/requests/search`): status, outcome, failure reason, slowest service |
+
+A real drill-down (`GET /api/v1/requests/{id}/report`, shortened):
+```json
+{"record": {
+  "method": "GET", "route": "/api/v1/exception-logs/{log_id}", "status_code": 404,
+  "outcome": "failed",
+  "failure": {"kind": "client_error", "error_code": "not_found",
+              "exception_type": "NotFoundError", "message": "Exception log not found",
+              "exception_log_id": "…"},
+  "timing": {"request_ms": 324.7, "in_services_ms": 201.6, "outside_services_ms": 123.2,
+             "slowest_service": "ExceptionLogService.get", "slowest_service_ms": 201.6},
+  "services": [{"call_order": 1, "parent_call_order": null, "depth": 0,
+                "service_name": "ExceptionLogService.get", "offset_ms": 113.6,
+                "duration_ms": 201.6, "self_ms": 201.6, "percent_of_request": 62.1,
+                "status": "success", "is_slowest": true}]}}
+```
+
+- **Outcome:** `failed` for any status ≥ 400. `failure.kind` is `client_error` (4xx)
+  or `server_error` (5xx). The reason comes from `exception_log`; open
+  `/api/v1/exception-logs/{exception_log_id}` for the traceback.
+- **Own time (`self_ms`):** a call's duration minus the tracked calls it made, so a
+  parent never looks slow just because a child was. `is_slowest` marks the highest
+  own time.
+- **Outside services:** request time minus top-level service time: routing,
+  validation, endpoint code, response serialization.
+- A service `status` of `success` with a failed request is normal: e.g. `get`
+  returned nothing and the endpoint decided on 404.
+- Rows land about a second after a request ends, so a report fetched immediately
+  may be incomplete.
+
+Recent failures with their reasons:
+```json
+POST /api/v1/requests/report
+{"filters": [{"field": "status_code", "op": "gte", "value": 400}],
+ "sort": [{"field": "started_on", "direction": "desc"}]}
+```
 
 ### Response envelopes (every resource endpoint)
 
@@ -284,7 +401,7 @@ List metadata:
 
 | Field | Meaning |
 |---|---|
-| `request_id` | same as the `X-Request-ID` header and `exception_log.request_id` |
+| `request_id` | same as the `X-Request-ID` header and the `id` of the request's row in `requests` |
 | `timestamp` | response time (UTC) |
 | `limit`, `offset` | the page that was requested |
 | `count` | records in this response |
@@ -332,11 +449,12 @@ enabled in production:
 | Table | Endpoints | Setting |
 |---|---|---|
 | `exception_log` | `/api/v1/exception-logs` | `EXCEPTION_LOG_API_ENABLED` |
-| `request_logs` | `/api/v1/request-logs` | `REQUEST_LOG_API_ENABLED` |
+| `requests` | `/api/v1/requests` | `REQUEST_LOG_API_ENABLED` |
+| `service_call_logs` | `/api/v1/service-call-logs` | `SERVICE_CALL_LOG_API_ENABLED` |
 
 For example, the slowest failing requests:
 ```json
-POST /api/v1/request-logs/search
+POST /api/v1/requests/search
 {"filters": [{"field": "status_code", "op": "gte", "value": 500}],
  "sort": [{"field": "duration_ms", "direction": "desc"}], "limit": 20}
 ```
