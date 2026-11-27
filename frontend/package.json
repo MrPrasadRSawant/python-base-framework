@@ -1,14 +1,18 @@
 {
   "name": "frontend",
   "version": "0.0.1",
-  "description": "A Quasar Project",
-  "productName": "Base App",
+  "description": "Baseframe enterprise application foundation",
+  "productName": "Baseframe",
   "author": "MrPrasadRSawant <prasadsawant1618@gmail.com>",
   "type": "module",
   "private": true,
   "scripts": {
-    "lint": "prettier --write \"**/*.{js,vue,css,scss,html,md,json}\" --ignore-path .gitignore && eslint --fix -c ./eslint.config.js \"./src*/**/*.{js,cjs,mjs,vue}\"",
-    "lint:check": "prettier \"**/*.{js,vue,css,scss,html,md,json}\" --ignore-path .gitignore && eslint -c ./eslint.config.js \"./src*/**/*.{js,cjs,mjs,vue}\"",
+    "lint": "prettier --write \"**/*.{js,vue,css,scss,html,md,json}\" --ignore-path .gitignore --ignore-path .prettierignore && eslint --fix -c ./eslint.config.js \"./src*/**/*.{js,cjs,mjs,vue}\"",
+    "lint:check": "prettier --check \"**/*.{js,vue,css,scss,html,md,json}\" --ignore-path .gitignore --ignore-path .prettierignore && eslint -c ./eslint.config.js \"./src*/**/*.{js,cjs,mjs,vue}\"",
+    "lint:colors": "node scripts/check-colors.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run lint:check && npm run lint:colors && npm run test",
     "dev": "quasar dev",
     "build": "quasar build",
     "postinstall": "quasar prepare --silent"
@@ -32,6 +36,7 @@
     "postcss": "^8.5.8",
     "prettier": "^3.8.1",
     "vite-plugin-checker": "^0.14.5",
+    "vitest": "^4.1.12",
     "vue-eslint-parser": "^10.4.0"
   },
   "keywords": [

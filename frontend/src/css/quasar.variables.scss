@@ -1,25 +1,59 @@
-// Quasar Sass (& SCSS) Variables
-// --------------------------------------------------
-// To customize the look and feel of this app, you can override
-// the Sass/SCSS variables found in Quasar's source Sass/SCSS files.
+// Quasar and application design tokens. Keep visual values here so modules
+// inherit the same palette, spacing, and shape in both themes.
 
-// Check documentation for full list of Quasar variables
+$primary: #2563a6;
+$secondary: #52657b;
+$accent: #0d9488;
 
-// Your own variables (that are declared here) and Quasar's own
-// ones will be available out of the box in your .vue/.scss/.sass files
+$positive: #16815d;
+$negative: #c2414c;
+$warning: #b7791f;
+$info: #2777b9;
 
-// It's highly recommended to change the default colors
-// to match your app's branding.
-// Tip: Use the "Theme Builder" on Quasar's documentation website.
+$app-light-bg: #f3f6fa;
+$app-light-surface: #ffffff;
+$app-light-surface-muted: #f7f9fc;
+$app-light-border: #dce4ed;
+$app-light-text: #172a41;
+$app-light-text-muted: #62758a;
 
-$primary: #1976d2;
-$secondary: #26a69a;
-$accent: #9c27b0;
+$dark: #162538;
+$dark-page: #0e1b2b;
+$app-dark-bg: $dark-page;
+$app-dark-surface: $dark;
+$app-dark-surface-muted: #1d3046;
+$app-dark-border: #34465c;
+$app-dark-text: #e8eef5;
+$app-dark-text-muted: #a8b7c8;
+$app-dark-primary: #8abcf2;
+$app-dark-positive: #65d6a7;
+$app-dark-negative: #ff969d;
+$app-dark-warning: #f2c477;
+$app-dark-info: #8bc9f2;
 
-$dark: #1d1d1d;
-$dark-page: #121212;
+$app-sidebar-bg: #ffffff;
+$app-sidebar-text: #172a41;
+$app-sidebar-muted: #62758a;
+$app-sidebar-hover: #f1f5f9;
+$app-sidebar-active: #e8f0f8;
+$app-sidebar-active-text: #1d548d;
+$app-sidebar-border: #dce4ed;
 
-$positive: #21ba45;
-$negative: #c10015;
-$info: #31ccec;
-$warning: #f2c037;
+$app-dark-sidebar-bg: #162538;
+$app-dark-sidebar-text: #edf4fb;
+$app-dark-sidebar-muted: #a8b7c8;
+$app-dark-sidebar-hover: #213a55;
+$app-dark-sidebar-active: #284a69;
+$app-dark-sidebar-active-text: #ffffff;
+$app-dark-sidebar-border: #34465c;
+
+$app-radius-sm: 6px;
+$app-radius-md: 10px;
+$app-radius-lg: 16px;
+$app-space-xs: 4px;
+$app-space-sm: 8px;
+$app-space-md: 16px;
+$app-space-lg: 24px;
+$app-space-xl: 32px;
+
+$app-shadow-card: 0 8px 28px rgba(17, 39, 63, 0.045);
