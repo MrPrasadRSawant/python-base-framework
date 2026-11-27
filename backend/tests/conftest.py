@@ -6,6 +6,7 @@ import os
 # Must be set before the app (and its settings) are imported.
 os.environ["LOG_TO_FILE"] = "false"
 os.environ["DEBUG"] = "false"
+os.environ["ENVIRONMENT"] = "test"
 # Tests never touch the real DB; the exception_log handler is tested with a fake sink.
 os.environ["EXCEPTION_LOG_DB_ENABLED"] = "false"
 os.environ["REQUEST_LOG_DB_ENABLED"] = "false"

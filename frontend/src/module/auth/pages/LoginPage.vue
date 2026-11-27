@@ -11,18 +11,15 @@
 
     <q-form greedy class="login-card__form" @submit.prevent="submit">
       <q-input
-        v-model="email"
-        type="email"
-        label="Work email"
+        v-model="identifier"
+        type="text"
+        label="Username or email"
         outlined
         autocomplete="username"
-        :rules="[
-          (v) => !!v || 'Enter your email',
-          (v) => /.+@.+\..+/.test(v) || 'Enter a valid email',
-        ]"
+        :rules="[(v) => !!v?.trim() || 'Enter your username or email']"
         lazy-rules
       >
-        <template #prepend><q-icon name="mail_outline" size="20px" /></template>
+        <template #prepend><q-icon name="person_outline" size="20px" /></template>
       </q-input>
 
       <q-input
@@ -72,7 +69,7 @@ import { safeRedirect } from '../guards.js'
 import { useAuthStore } from '../store.js'
 
 const MESSAGES = {
-  invalid_credentials: 'Incorrect email or password.',
+  invalid_credentials: 'Incorrect username, email or password.',
   network_error: 'Cannot reach the server. Check your connection and try again.',
   timeout: 'The server took too long to answer. Try again.',
 }
@@ -81,7 +78,7 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
-const email = ref('')
+const identifier = ref('')
 const password = ref('')
 const showPassword = ref(false)
 const loading = ref(false)
@@ -91,7 +88,7 @@ async function submit() {
   loading.value = true
   errorMessage.value = ''
   try {
-    await auth.login(email.value.trim(), password.value)
+    await auth.login(identifier.value.trim(), password.value)
     await router.replace(safeRedirect(route.query.redirect))
   } catch (err) {
     password.value = ''

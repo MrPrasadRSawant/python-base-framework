@@ -14,8 +14,9 @@ from app.core.logging.db_sink import (
     request_log_sink,
     service_call_log_sink,
 )
-from app.db.session import engine
+from app.db.session import SessionLocal, engine
 from app.middleware import register_middleware
+from app.scripts.seed_development_accounts import seed_development_accounts
 
 setup_logging(settings)
 
@@ -60,6 +61,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     logger.info("Starting %s (%s)", settings.APP_NAME, settings.ENVIRONMENT)
+    if settings.ENVIRONMENT == "development" and settings.DEV_SEED_ACCOUNTS:
+        async with SessionLocal() as db:
+            await seed_development_accounts(db)
     if settings.EXCEPTION_LOG_DB_ENABLED:
         await exception_log_sink.start()
     if settings.REQUEST_LOG_DB_ENABLED:

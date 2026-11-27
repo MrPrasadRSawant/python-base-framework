@@ -125,7 +125,12 @@ def test_request_row_records_the_caller(client, request_rows):
 
 
 # ---- register / login / me (real DB) --------------------------------------
-REGISTER = {"email": "Alice@Example.com", "full_name": "Alice", "password": "a-long-password-1"}
+REGISTER = {
+    "username": "AliceHandle",
+    "email": "Alice@Example.com",
+    "full_name": "Alice",
+    "password": "a-long-password-1",
+}
 
 
 @pytest.mark.anyio
@@ -133,7 +138,8 @@ async def test_register_login_me(api):
     r = await api.post("/api/v1/auth/register", json=REGISTER)
     assert r.status_code == 201
     user = r.json()["record"]
-    assert user["email"] == "alice@example.com" and "password_hash" not in user
+    assert user["email"] == "alice@example.com" and user["username"] == "AliceHandle"
+    assert "password_hash" not in user
 
     r = await api.post(
         "/api/v1/auth/login", json={"email": "ALICE@example.com", "password": REGISTER["password"]}
@@ -141,6 +147,13 @@ async def test_register_login_me(api):
     assert r.status_code == 200
     token = r.json()["record"]["access_token"]
     assert principal_from_token(token).id == user["id"]
+
+    by_username = await api.post(
+        "/api/v1/auth/login",
+        json={"identifier": "alicehandle", "password": REGISTER["password"]},
+    )
+    assert by_username.status_code == 200
+    assert principal_from_token(by_username.json()["record"]["access_token"]).id == user["id"]
 
     r = await api.get("/api/v1/auth/me", headers=bearer(token))
     assert r.status_code == 200
@@ -152,6 +165,16 @@ async def test_duplicate_email_is_409(api):
     await api.post("/api/v1/auth/register", json=REGISTER)
     r = await api.post("/api/v1/auth/register", json={**REGISTER, "email": "alice@EXAMPLE.com"})
     assert r.status_code == 409 and r.json()["error"]["code"] == "email_taken"
+
+
+@pytest.mark.anyio
+async def test_duplicate_username_is_case_insensitive(api):
+    await api.post("/api/v1/auth/register", json=REGISTER)
+    r = await api.post(
+        "/api/v1/auth/register",
+        json={**REGISTER, "email": "different@example.com", "username": "alicehandle"},
+    )
+    assert r.status_code == 409 and r.json()["error"]["code"] == "username_taken"
 
 
 @pytest.mark.anyio
@@ -243,7 +266,7 @@ def test_openapi_has_authorize_schemes(client):
 @pytest.mark.anyio
 async def test_oauth2_password_grant(api):
     await api.post("/api/v1/auth/register", json=REGISTER)
-    form = {"grant_type": "password", "username": "ALICE@example.com", "password": REGISTER["password"]}
+    form = {"grant_type": "password", "username": "alicehandle", "password": REGISTER["password"]}
     r = await api.post("/api/v1/auth/token", data=form)
     assert r.status_code == 200
     body = r.json()

@@ -1,15 +1,15 @@
 """Sign-in for web users and API clients.
 
     POST /auth/register   create an account (only if AUTH_SELF_REGISTRATION_ENABLED)
-    POST /auth/login      email + password -> access token + refresh cookie
+    POST /auth/login      username/email + password -> access token + refresh cookie
     POST /auth/refresh    refresh cookie -> new access token + new refresh cookie
     POST /auth/logout     revoke the refresh cookie's session
     POST /auth/token      OAuth2 (form): password grant (Swagger / tools) or
                           client_credentials grant (API clients) -> access token
     GET  /auth/me         the signed-in user, with roles and permissions
 
-Every login failure (unknown email, wrong password, inactive, locked) gets the
-same 401 and message, so the response never reveals whether an email exists.
+Every login failure (unknown account, wrong password, inactive, locked) gets the
+same 401 and message, so the response never reveals whether an account exists.
 
 login, token, register and refresh are rate limited per client IP
 (RATE_LIMIT_*), and client_credentials also per client_id: 429 + Retry-After.
@@ -69,7 +69,7 @@ RefreshCookie = Cookie(None, alias=settings.REFRESH_COOKIE_NAME, include_in_sche
 
 def _invalid_credentials() -> UnauthorizedError:
     return UnauthorizedError(
-        "Invalid email or password.",
+        "Invalid username, email or password.",
         error_code="invalid_credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
@@ -153,14 +153,19 @@ async def _token_record(db: AsyncSession, user: User) -> dict:
     return record_response(await _user_token(db, user))
 
 
-async def _authenticate_user(db: AsyncSession, email: str, password: str) -> User:
-    """Check email + password (with lockout). Raises the same 401 for every failure."""
+async def _authenticate_user(db: AsyncSession, identifier: str, password: str) -> User:
+    """Check username or email + password with the same failure response."""
     users = UserService(db)
-    user = await users.get_by_email(email)
+    identifier = identifier.strip()
+    user = (
+        await users.get_by_email(normalize_email(identifier))
+        if "@" in identifier
+        else await users.get_by_username(identifier)
+    )
     if user is None:
         verify_dummy(password)  # same time as a real check
         raise _invalid_credentials()
-    if user.locked_until is not None and user.locked_until > utc_now():
+    if user.is_locked or (user.locked_until is not None and user.locked_until > utc_now()):
         raise _invalid_credentials()
     if not verify_password(password, user.password_hash):
         await users.record_login_failure(
@@ -181,7 +186,7 @@ async def _authenticate_user(db: AsyncSession, email: str, password: str) -> Use
     dependencies=[Depends(rate_limit("register", lambda: settings.RATE_LIMIT_REGISTER))],
     responses=error_responses(
         (403, "`registration_disabled`: self-registration is switched off"),
-        (409, "`email_taken`: an account with this email already exists"),
+        (409, "`email_taken` or `username_taken`: email or username already exists"),
         429,
     ),
 )
@@ -190,7 +195,8 @@ async def register(payload: UserRegister, db: AsyncSession = Depends(get_db)):
     **Rate limit:** `RATE_LIMIT_REGISTER` per IP.
 
     Creates an active account with **no roles**: the user can sign in but has no
-    permissions until an admin assigns a role. The email is stored lower-cased.
+    permissions until an admin assigns a role. Email is stored lower-cased;
+    username is separate and unique without regard to case.
     Password: 12 to 128 characters.
 
     This does not sign the user in; call `POST /auth/login` next.
@@ -200,8 +206,11 @@ async def register(payload: UserRegister, db: AsyncSession = Depends(get_db)):
     users = UserService(db)
     if await users.get_by_email(payload.email) is not None:
         raise ConflictError("An account with this email already exists.", error_code="email_taken")
+    if await users.get_by_username(payload.username) is not None:
+        raise ConflictError("This username is already taken.", error_code="username_taken")
     user = await users.create(
         UserCreate(
+            username=payload.username,
             email=payload.email,
             full_name=payload.full_name,
             password_hash=hash_password(payload.password),
@@ -216,24 +225,24 @@ async def register(payload: UserRegister, db: AsyncSession = Depends(get_db)):
     response_model=RecordResponse[TokenResponse],
     dependencies=[Depends(rate_limit("login", lambda: settings.RATE_LIMIT_LOGIN))],
     responses=error_responses(
-        (401, "`invalid_credentials`: wrong email or password, disabled or locked account"),
+        (401, "`invalid_credentials`: wrong username/email or password, disabled or locked account"),
         429,
     ),
 )
 async def login(payload: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     """**Access:** Public. **Rate limit:** `RATE_LIMIT_LOGIN` per IP (shared with `/auth/token`).
 
-    Checks email + password and returns:
+    Checks username or email + password and returns:
     - `record.access_token`: send as `Authorization: Bearer <token>`; valid for `expires_in`
       seconds. It carries the user's permissions.
     - A **refresh cookie** (`Set-Cookie`, HttpOnly, path `/api/v1/auth`), used by
       `POST /auth/refresh`. JavaScript cannot read it; send requests with credentials.
 
     Every failure returns the same `401 invalid_credentials`, so the response never
-    reveals whether an email exists. After `LOGIN_MAX_FAILED` wrong passwords in a row
+    reveals whether an account exists. After `LOGIN_MAX_FAILED` wrong passwords in a row
     the account is locked for `LOGIN_LOCK_MINUTES`.
     """
-    user = await _authenticate_user(db, payload.email, payload.password)
+    user = await _authenticate_user(db, payload.identifier, payload.password)
     set_refresh_cookie(response, await RefreshTokenService(db).issue(user.id))
     return await _token_record(db, user)
 
@@ -254,7 +263,7 @@ async def token(
         Form(description="`client_credentials` for API clients, `password` for users"),
     ],
     username: Annotated[
-        str | None, Form(max_length=255, description="password grant: the user's email")
+        str | None, Form(max_length=255, description="password grant: username or email")
     ] = None,
     password: Annotated[
         str | None, Form(max_length=PASSWORD_MAX_LENGTH, description="password grant")
@@ -280,7 +289,7 @@ async def token(
     `401 invalid_client` if the client is unknown, disabled, expired, calling from an IP
     outside its allowlist, or the secret is wrong.
 
-    **`password`** (Swagger / tools): send `username` (email) + `password`. Same checks as
+    **`password`** (Swagger / tools): send `username` (username or email) + `password`. Same checks as
     `POST /auth/login`, but no refresh cookie is set. The web app should use `/auth/login`.
 
     ```
@@ -293,7 +302,7 @@ async def token(
         limiter.check(f"login:ip:{ip}", settings.RATE_LIMIT_LOGIN)  # shared with /auth/login
         if not username or not password:
             raise _invalid_credentials()
-        user = await _authenticate_user(db, normalize_email(username), password)
+        user = await _authenticate_user(db, username, password)
         return await _user_token(db, user)
 
     limiter.check(f"token:ip:{ip}", settings.RATE_LIMIT_TOKEN)
@@ -352,7 +361,7 @@ async def refresh(
         raise _invalid_refresh()
 
     user = await UserService(db).get(current.user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or user.is_locked:
         await tokens.revoke_family(current.family_id)
         raise _invalid_refresh()
 

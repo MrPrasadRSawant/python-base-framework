@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-27: User and Role Management
+
+- Added separate, unique usernames to user creation, search, and sign-in. The login page accepts username or email.
+- Added User Management with quick search, an advanced filter dialog, account creation, and enable/disable and lock/unlock actions.
+- Added role assignment for existing users through a dedicated Manage roles dialog.
+- Added Role Management with quick search, the shared advanced filter dialog, role creation and editing, permission assignment, and protected deletion.
+- System role permissions are view-only. Permission options the administrator does not hold cannot be changed.
+
 ## 2026-11-27: Quality hardening
 - Added unit tests (Vitest 4) for the API layer, auth store, guards and error messages; `npm test`.
 - Added ESLint rule `app/module-boundaries` (modules only through `@/module/<name>`), and blocked `axios` outside `src/api`.

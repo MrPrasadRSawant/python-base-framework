@@ -10,8 +10,8 @@ const SESSION_CALL = { skipAuth: true, skipAuthRefresh: true }
 
 export const authApi = {
   /** -> {access_token, token_type, expires_in}; also sets the refresh cookie. */
-  async login(email, password) {
-    const { data } = await http.post('/auth/login', { email, password }, SESSION_CALL)
+  async login(identifier, password) {
+    const { data } = await http.post('/auth/login', { identifier, password }, SESSION_CALL)
     return data.record
   },
 

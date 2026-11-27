@@ -11,7 +11,7 @@
         <q-item>
           <q-item-section>
             <q-item-label class="text-weight-medium">{{ auth.user.full_name }}</q-item-label>
-            <q-item-label caption>{{ auth.user.email }}</q-item-label>
+            <q-item-label caption>@{{ auth.user.username }} · {{ auth.user.email }}</q-item-label>
             <div v-if="auth.roles.length" class="q-mt-xs">
               <q-badge
                 v-for="role in auth.roles"
