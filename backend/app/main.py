@@ -9,6 +9,8 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import setup_logging
+from app.core.activity_log import install_activity_tracking
+from app.core.logging import db_sink
 from app.core.logging.db_sink import (
     exception_log_sink,
     request_log_sink,
@@ -53,6 +55,11 @@ OPENAPI_TAGS = [
         "name": "service call logs",
         "description": "Timing and outcome of each tracked service call within a request.",
     },
+    {
+        "name": "user activity logs",
+        "description": "Audit trail: who created, changed or deleted which record (with "
+        "before/after values), sign-ins, failed sign-ins and denied access.",
+    },
     {"name": "health", "description": "Liveness and database status, for monitoring."},
 ]
 logger = logging.getLogger(__name__)
@@ -70,8 +77,13 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         await request_log_sink.start()
     if settings.SERVICE_CALL_LOG_DB_ENABLED:
         await service_call_log_sink.start()
+    if settings.ENABLE_USER_ACTIVITY_LOG:
+        install_activity_tracking()
+        # Looked up on the module (not imported by name) so tests can swap in a fake.
+        await db_sink.user_activity_log_sink.start()
     yield
     # Flush queued log rows before closing the DB pool.
+    await db_sink.user_activity_log_sink.stop()
     await service_call_log_sink.stop()
     await request_log_sink.stop()
     await exception_log_sink.stop()

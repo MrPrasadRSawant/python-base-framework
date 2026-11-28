@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.responses import error_responses, record_response
 from app.api.v1.access import user_detail
+from app.core.activity_log import Activity, record_activity
 from app.core.config import settings
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
 from app.core.rate_limit import client_ip, limiter, rate_limit
@@ -117,26 +118,42 @@ def _ip_allowed(client: ApiClient, ip: str | None) -> bool:
 async def _authenticate_client(
     db: AsyncSession, client_id: str | None, secret: str | None, ip: str | None
 ) -> ApiClient:
-    """Check client credentials. Raises the same 401 for every failure."""
+    """Check client credentials. Raises the same 401 for every failure
+    (the real reason goes to the user activity log only)."""
+
+    def failed(reason: str, client: ApiClient | None = None) -> UnauthorizedError:
+        record_activity(
+            Activity.CLIENT_AUTH_FAILED, status="failed", entity=client, details={"reason": reason}
+        )
+        return _invalid_client()
+
     if not client_id or not secret:
-        raise _invalid_client()
+        raise failed("missing_credentials")
     clients = ApiClientService(db)
     client = await clients.get_by_client_id(client_id)
     if client is None:
         verify_dummy(secret)  # same time as a real check
-        raise _invalid_client()
-    usable = (
-        client.is_active
-        and (client.expires_on is None or client.expires_on > utc_now())
-        and _ip_allowed(client, ip)
+        raise failed("unknown_client")
+    secret_ok = verify_password(secret, client.secret_hash)
+    reason = (
+        "wrong_secret"
+        if not secret_ok
+        else "client_disabled"
+        if not client.is_active
+        else "client_expired"
+        if client.expires_on is not None and client.expires_on <= utc_now()
+        else "ip_not_allowed"
+        if not _ip_allowed(client, ip)
+        else None
     )
-    if not verify_password(secret, client.secret_hash) or not usable:
+    if reason is not None:
         logger.warning(
             "API client authentication failed",
             extra={"client_id": client.client_id, "client_ip": ip},
         )
-        raise _invalid_client()
+        raise failed(reason, client)
     await clients.record_use(client)
+    record_activity(Activity.TOKEN_ISSUED, entity=client, actor=f"service:{client.client_id}")
     return client
 
 
@@ -154,7 +171,20 @@ async def _token_record(db: AsyncSession, user: User) -> dict:
 
 
 async def _authenticate_user(db: AsyncSession, identifier: str, password: str) -> User:
-    """Check username or email + password with the same failure response."""
+    """Check username or email + password with the same failure response
+    (the real reason goes to the user activity log only)."""
+
+    def failed(reason: str, user: User | None = None, **details) -> UnauthorizedError:
+        # The typed identifier is never stored: people paste passwords into it.
+        record_activity(
+            Activity.LOGIN_FAILED,
+            status="failed",
+            entity=user,
+            entity_type="users",
+            details={"reason": reason, **details},
+        )
+        return _invalid_credentials()
+
     users = UserService(db)
     identifier = identifier.strip()
     user = (
@@ -164,17 +194,19 @@ async def _authenticate_user(db: AsyncSession, identifier: str, password: str) -
     )
     if user is None:
         verify_dummy(password)  # same time as a real check
-        raise _invalid_credentials()
+        raise failed("unknown_account")
     if user.is_locked or (user.locked_until is not None and user.locked_until > utc_now()):
-        raise _invalid_credentials()
+        raise failed("account_locked", user)
     if not verify_password(password, user.password_hash):
         await users.record_login_failure(
             user, max_failed=settings.LOGIN_MAX_FAILED, lock_minutes=settings.LOGIN_LOCK_MINUTES
         )
-        raise _invalid_credentials()
+        locked_now = user.locked_until is not None and user.locked_until > utc_now()
+        raise failed("wrong_password", user, locked_out=locked_now)
     if not user.is_active:
-        raise _invalid_credentials()
+        raise failed("account_disabled", user)
     await users.record_login_success(user)
+    record_activity(Activity.LOGIN, entity=user, actor=f"user:{user.id}")
     return user
 
 
@@ -354,6 +386,13 @@ async def refresh(
         raise _invalid_refresh()
     if current.revoked_on is not None:
         await tokens.revoke_family(current.family_id)
+        record_activity(
+            Activity.SESSION_REVOKED,
+            status="failed",
+            entity_type="users",
+            entity_id=current.user_id,
+            details={"reason": "refresh_token_reuse", "family_id": str(current.family_id)},
+        )
         logger.warning(
             "Refresh token reuse detected; session revoked",
             extra={"user_id": str(current.user_id), "family_id": str(current.family_id)},
@@ -382,6 +421,12 @@ async def logout(refresh_token: str | None = RefreshCookie, db: AsyncSession = D
         current = await tokens.get_by_token(refresh_token)
         if current is not None:
             await tokens.revoke_family(current.family_id)
+            record_activity(
+                Activity.LOGOUT,
+                entity_type="users",
+                entity_id=current.user_id,
+                actor=f"user:{current.user_id}",
+            )
     response = Response(status_code=204)
     clear_refresh_cookie(response)
     return response

@@ -14,6 +14,8 @@ os.environ["SERVICE_CALL_LOG_DB_ENABLED"] = "false"
 os.environ["EXCEPTION_LOG_API_ENABLED"] = "true"  # so their endpoints can be tested
 os.environ["REQUEST_LOG_API_ENABLED"] = "true"
 os.environ["SERVICE_CALL_LOG_API_ENABLED"] = "true"
+# Capture + API on; rows go to the in-memory sink below (autouse), never the real DB.
+os.environ["ENABLE_USER_ACTIVITY_LOG"] = "true"
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-that-is-at-least-32-characters"
 os.environ["AUTH_SELF_REGISTRATION_ENABLED"] = "true"
 os.environ["REFRESH_COOKIE_SECURE"] = "false"  # test client talks plain http
@@ -88,6 +90,29 @@ class FakeSink:
 
     def enqueue(self, row: dict) -> None:
         self.rows.append(row.model_dump())
+
+
+class FakeActivitySink(FakeSink):
+    """Stands in for user_activity_log_sink: always "running", keeps rows in memory."""
+
+    name = "user_activity_logs"
+    running = True
+
+    async def start(self) -> None: ...
+
+    async def stop(self) -> None: ...
+
+
+@pytest.fixture(autouse=True)
+def activity_rows(monkeypatch):
+    """Every test: activity tracking on, rows collected here instead of the database."""
+    from app.core import activity_log
+    from app.core.logging import db_sink
+
+    activity_log.install_activity_tracking()
+    sink = FakeActivitySink()
+    monkeypatch.setattr(db_sink, "user_activity_log_sink", sink)
+    return sink.rows
 
 
 @pytest.fixture

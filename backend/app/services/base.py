@@ -17,6 +17,7 @@ Subclass it, point it at a model and list which fields may be used:
 """
 
 import uuid
+from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy import Select, String, and_, cast, func, or_, select
@@ -100,6 +101,26 @@ class BaseService:
         record.soft_delete()
         await self.db.commit()
         return True
+
+    async def replace_links(
+        self, owner_field: str, owner_id: uuid.UUID, target_field: str, target_ids: Iterable[Any]
+    ) -> None:
+        """For a join table: make ``target_ids`` the owner's complete set of rows.
+
+        Only the differences are hard-deleted / inserted, so unchanged rows keep
+        their created_on / created_by and the user activity log shows exactly
+        what was granted or taken away.
+        """
+        wanted = set(target_ids)
+        owner = getattr(self.model, owner_field)
+        for row in (await self.db.scalars(select(self.model).where(owner == owner_id))).all():
+            target = getattr(row, target_field)
+            if target in wanted:
+                wanted.discard(target)
+            else:
+                await self.db.delete(row)
+        self.db.add_all(self.model(**{owner_field: owner_id, target_field: t}) for t in wanted)
+        await self.db.commit()
 
     # ---------------------------------------------------------------- search
     @track_service

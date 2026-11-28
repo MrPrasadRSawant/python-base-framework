@@ -403,6 +403,15 @@ POST /api/v1/requests/report
  "sort": [{"field": "started_on", "direction": "desc"}]}
 ```
 
+### `user_activity_logs` table (audit trail)
+
+Who created / changed / deleted which record (with before/after values), plus sign-ins,
+failed sign-ins, API-client tokens, refresh-token reuse and every 403. Captured
+automatically from SQLAlchemy session events on commit (never for rolled-back work),
+written by the same background writer, read at `/api/v1/user-activity-logs`
+(permission `user_activity_logs:read`, held by `admin`). Switched on by
+`ENABLE_USER_ACTIVITY_LOG`. Details: `documentation/user_activity_log_module/`.
+
 ### Response envelopes (every resource endpoint)
 
 | Kind | Shape |
@@ -520,5 +529,6 @@ to show backend and database status.
 | backend/.env | `API_V1_PREFIX` | API prefix (default `/api/v1`) |
 | backend/.env | `CORS_ORIGINS` | Comma-separated allowed origins |
 | backend/.env | `POSTGRES_HOST/PORT/USER/PASSWORD/DB` | Database connection |
+| backend/.env | `ENABLE_USER_ACTIVITY_LOG` | User activity log: capture + `/user-activity-logs` API |
 | frontend/.env | `QCLI_APP_NAME` | Display name |
 | frontend/.env | `QCLI_API_BASE_URL` | Backend base URL |

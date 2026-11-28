@@ -73,7 +73,7 @@
                 label="Condition"
               />
               <q-select
-                v-if="fieldType(condition.field) === 'boolean'"
+                v-if="['boolean', 'select'].includes(fieldType(condition.field))"
                 v-model="condition.value"
                 dense
                 outlined
@@ -428,6 +428,12 @@ function clear() {
   .advanced-filters__actions {
     width: 100%;
     justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 400px) {
+  .advanced-filters__actions .q-btn:first-child {
+    margin-right: auto;
   }
 }
 </style>

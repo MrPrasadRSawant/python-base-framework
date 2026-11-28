@@ -18,6 +18,9 @@ class RefreshToken(AuditMixin, Base):
     """
 
     __tablename__ = "refresh_tokens"
+    # Rotated on every refresh: far too noisy to audit. Sign-in, sign-out and token
+    # reuse are recorded as explicit events instead (app/api/v1/endpoints/auth.py).
+    __activity_log__ = False
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True

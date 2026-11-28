@@ -21,6 +21,7 @@ class Perm(StrEnum):
     SERVICE_CALL_LOGS_READ = "service_call_logs:read"
     API_CLIENTS_READ = "api_clients:read"
     API_CLIENTS_MANAGE = "api_clients:manage"
+    USER_ACTIVITY_LOGS_READ = "user_activity_logs:read"
 
 
 DESCRIPTIONS: dict[Perm, str] = {
@@ -33,6 +34,9 @@ DESCRIPTIONS: dict[Perm, str] = {
     Perm.SERVICE_CALL_LOGS_READ: "View service call logs",
     Perm.API_CLIENTS_READ: "View API clients (server integrations)",
     Perm.API_CLIENTS_MANAGE: "Create, update, rotate secrets of and delete API clients",
+    Perm.USER_ACTIVITY_LOGS_READ: (
+        "View the user activity log (audit trail of changes and sign-ins)"
+    ),
 }
 
 # Seeded system role: holds every permission, cannot be deleted.

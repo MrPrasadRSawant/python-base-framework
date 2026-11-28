@@ -1,5 +1,5 @@
 <template>
-  <div class="app-table app-card">
+  <div class="app-table app-card" :class="{ 'app-table--compact': compact }">
     <div class="app-table__toolbar row items-center q-gutter-sm">
       <q-input
         v-if="searchable"
@@ -16,7 +16,15 @@
       </q-input>
       <slot name="toolbar" />
       <q-space />
-      <q-btn flat round dense icon="refresh" :loading="loading" @click="reload">
+      <q-btn
+        flat
+        round
+        dense
+        icon="refresh"
+        :size="compact ? 'sm' : undefined"
+        :loading="loading"
+        @click="reload"
+      >
         <q-tooltip>Refresh</q-tooltip>
       </q-btn>
     </div>
@@ -38,7 +46,7 @@
       :row-key="rowKey"
       :loading="loading"
       :rows-per-page-options="[10, 20, 50, 100]"
-      :class="['app-table__table', tableClass]"
+      :class="['app-table__table', tableClass, { 'app-table__table--tall': tall }]"
       @request="onRequest"
       @row-click="(evt, row) => emit('row-click', row)"
     >
@@ -78,6 +86,8 @@ const props = defineProps({
   resource: { type: Object, required: true }, // createResource(...) or {search(body)}
   columns: { type: Array, required: true },
   tableClass: { type: String, default: '' },
+  compact: { type: Boolean, default: false },
+  tall: { type: Boolean, default: false },
   rowKey: { type: String, default: 'id' },
   filters: { type: Array, default: () => [] }, // SearchRequest filters, always applied
   searchable: { type: Boolean, default: true },
@@ -90,7 +100,7 @@ const props = defineProps({
   emptyTitle: { type: String, default: 'No records found' },
   emptyMessage: { type: String, default: '' },
 })
-const emit = defineEmits(['row-click', 'loaded'])
+const emit = defineEmits(['row-click', 'loaded', 'error'])
 const slots = useSlots()
 
 const rows = ref([])
@@ -133,7 +143,10 @@ async function onRequest({ pagination: next }) {
     pagination.value = { ...next, rowsNumber: data.metadata.total_count ?? data.records.length }
     emit('loaded', data)
   } catch (err) {
-    if (seq === requestSeq) error.value = err
+    if (seq === requestSeq) {
+      error.value = err
+      emit('error', err)
+    }
   } finally {
     if (seq === requestSeq) loading.value = false
   }
@@ -166,6 +179,18 @@ defineExpose({ reload })
   width: 320px;
   max-width: 100%;
 }
+.app-table--compact .app-table__toolbar {
+  flex-wrap: wrap;
+  padding: var(--app-space-sm) var(--app-space-md);
+}
+.app-table--compact .app-table__search {
+  width: 240px;
+  font-size: 12px;
+}
+.app-table--compact .app-table__search :deep(.q-field__control) {
+  height: 34px;
+  min-height: 34px;
+}
 .app-table__table {
   background: transparent;
 
@@ -182,5 +207,8 @@ defineExpose({ reload })
     color: var(--app-text-muted);
     font-weight: 600;
   }
+}
+.app-table__table--tall :deep(.q-table__middle) {
+  max-height: min(980px, max(320px, calc(100dvh - 240px)));
 }
 </style>

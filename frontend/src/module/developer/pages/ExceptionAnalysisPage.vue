@@ -1,8 +1,9 @@
 <template>
-  <q-page class="app-page exception-page">
+  <q-page class="app-page app-page--dense exception-page">
     <AppPageHeader
+      compact
       title="Exception Analysis"
-      subtitle="Understand error volume, recurring failures, and their affected requests."
+      subtitle="Inspect recorded errors and their affected requests."
     >
       <template #actions>
         <q-btn-toggle
@@ -16,47 +17,10 @@
       </template>
     </AppPageHeader>
 
-    <div class="exception-page__metrics">
-      <article class="app-card exception-metric">
-        <span>Events on this page</span><strong>{{ rows.length }}</strong>
-        <small>Latest recorded exceptions</small>
-      </article>
-      <article class="app-card exception-metric">
-        <span>Server errors</span><strong>{{ serverErrors }}</strong>
-        <small>HTTP status 500 and above</small>
-      </article>
-      <article class="app-card exception-metric">
-        <span>Client errors</span><strong>{{ clientErrors }}</strong>
-        <small>HTTP status 400 to 499</small>
-      </article>
-      <article class="app-card exception-metric">
-        <span>Distinct error types</span><strong>{{ typeCount }}</strong>
-        <small>Across the current page</small>
-      </article>
-    </div>
-
-    <section class="app-card exception-page__patterns">
-      <div>
-        <h2>Recurring error codes</h2>
-        <p>Most frequent codes in the current result page</p>
-      </div>
-      <div v-if="topCodes.length" class="exception-page__bars">
-        <div v-for="entry in topCodes" :key="entry.code" class="exception-page__bar-row">
-          <code>{{ entry.code }}</code>
-          <q-linear-progress
-            rounded
-            size="8px"
-            color="negative"
-            :value="entry.count / maxCodeCount"
-          />
-          <strong>{{ entry.count }}</strong>
-        </div>
-      </div>
-      <div v-else class="text-app-muted q-mt-md">No error codes in this result page.</div>
-    </section>
-
     <AppTable
-      ref="table"
+      compact
+      tall
+      :page-size="20"
       :resource="exceptionsApi"
       :columns="columns"
       :filters="filters"
@@ -65,7 +29,6 @@
       empty-icon="check_circle"
       empty-title="No exceptions found"
       empty-message="Try a different search or severity."
-      @loaded="onLoaded"
       @row-click="openException"
     >
       <template #body-cell-status_code="props">
@@ -157,8 +120,6 @@ import { exceptionsApi, getException } from '../api.js'
 
 const router = useRouter()
 const auth = useAuthStore()
-const table = ref(null)
-const rows = ref([])
 const severity = ref('all')
 const severityOptions = [
   { label: 'All events', value: 'all' },
@@ -188,29 +149,6 @@ const columns = [
   { name: 'route', label: 'Route', field: 'route', align: 'left' },
   { name: 'message', label: 'Message', field: 'message', align: 'left' },
 ]
-const serverErrors = computed(() => rows.value.filter((row) => row.status_code >= 500).length)
-const clientErrors = computed(
-  () => rows.value.filter((row) => row.status_code >= 400 && row.status_code < 500).length,
-)
-const typeCount = computed(
-  () => new Set(rows.value.map((row) => row.exception_type).filter(Boolean)).size,
-)
-const topCodes = computed(() => {
-  const counts = new Map()
-  for (const row of rows.value) {
-    const code = row.error_code || row.exception_type || 'Unclassified'
-    counts.set(code, (counts.get(code) || 0) + 1)
-  }
-  return [...counts]
-    .map(([code, count]) => ({ code, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5)
-})
-const maxCodeCount = computed(() => Math.max(1, ...topCodes.value.map((item) => item.count)))
-
-function onLoaded(data) {
-  rows.value = data.records
-}
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'medium',
@@ -239,53 +177,6 @@ function openRequest(id) {
 </script>
 
 <style scoped lang="scss">
-.exception-page__metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--app-space-md);
-  margin-bottom: var(--app-space-md);
-}
-.exception-metric {
-  display: grid;
-  gap: 6px;
-  padding: var(--app-space-md) var(--app-space-lg);
-}
-.exception-metric span,
-.exception-metric small {
-  color: var(--app-text-muted);
-  font-size: 12px;
-}
-.exception-metric strong {
-  font-size: 27px;
-  line-height: 1;
-}
-.exception-page__patterns {
-  display: grid;
-  grid-template-columns: minmax(180px, 0.7fr) minmax(320px, 1.5fr);
-  gap: var(--app-space-lg);
-  padding: var(--app-space-lg);
-  margin-bottom: var(--app-space-md);
-}
-.exception-page__patterns h2 {
-  margin: 0;
-  font-size: 15px;
-}
-.exception-page__patterns p {
-  margin: 5px 0 0;
-  color: var(--app-text-muted);
-  font-size: 12px;
-}
-.exception-page__bars {
-  display: grid;
-  gap: 9px;
-}
-.exception-page__bar-row {
-  display: grid;
-  grid-template-columns: minmax(100px, 1fr) minmax(80px, 3fr) 32px;
-  align-items: center;
-  gap: var(--app-space-sm);
-  font-size: 12px;
-}
 .exception-page__message {
   max-width: 360px;
   overflow: hidden;
@@ -332,21 +223,5 @@ function openRequest(id) {
   font-size: 11px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-@media (max-width: 800px) {
-  .exception-page__metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .exception-page__patterns {
-    grid-template-columns: 1fr;
-  }
-}
-@media (max-width: 480px) {
-  .exception-page__metrics {
-    grid-template-columns: 1fr 1fr;
-  }
-  .exception-metric {
-    padding: var(--app-space-md);
-  }
 }
 </style>

@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import Iterable
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from app.core.service_tracking import track_service
 from app.models import Role, UserRole
@@ -24,7 +24,5 @@ class UserRoleService(BaseService):
 
     @track_service
     async def replace_for_user(self, user_id: uuid.UUID, role_ids: Iterable[uuid.UUID]) -> None:
-        """Make ``role_ids`` the user's complete set of roles (old rows hard-deleted)."""
-        await self.db.execute(delete(UserRole).where(UserRole.user_id == user_id))
-        self.db.add_all(UserRole(user_id=user_id, role_id=rid) for rid in set(role_ids))
-        await self.db.commit()
+        """Make ``role_ids`` the user's complete set of roles (only differences change)."""
+        await self.replace_links("user_id", user_id, "role_id", role_ids)

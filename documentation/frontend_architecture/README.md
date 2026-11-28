@@ -1,6 +1,6 @@
 # Frontend Architecture
 
-Status: **Foundation, Auth, Users, Roles, and Developer modules done**
+Status: **Foundation, Auth, Users, Roles, Audit, and Developer modules done**
 
 Quasar 2 (Vue 3, Vite) + Pinia + axios, JavaScript.
 
@@ -16,6 +16,7 @@ Quasar 2 (Vue 3, Vite) + Pinia + axios, JavaScript.
 | [auth_module.md](auth_module.md) | Login, session, guards, permissions in the UI |
 | [users_module.md](users_module.md) | Admin list, creation, status, and lock flows |
 | [roles_module.md](roles_module.md) | Role list, details, permissions, and deletion flows |
+| [audit_module.md](audit_module.md) | User Activity: audit trail, record history, investigation links |
 | [developer_module.md](developer_module.md) | Exception analysis, request lifecycle reports, and permission management |
 | [quality.md](quality.md) | Lint rules, color check, unit tests, error handling |
 | [changelog.md](changelog.md) | Changes over time |

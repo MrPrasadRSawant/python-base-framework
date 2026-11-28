@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-28: User activity log permission
+
+- Added the permission `user_activity_logs:read` (migration `16_7c3e9a1f5b2d`), granted to `admin`. See `documentation/user_activity_log_module/`.
+- Sign-in, failed sign-in (with the real reason), sign-out, API-client token and refresh-token reuse events are now recorded in `user_activity_logs`; the API responses are unchanged.
+
 ## 2026-11-27: Usernames and default developer access
 
 - Added a separate case-insensitive unique username, with migration backfill for existing users. Login and the OAuth password grant accept username or email.

@@ -19,6 +19,9 @@ class ApiClient(AuditMixin, Base):
 
     __tablename__ = "api_clients"
 
+    # Updated on every token request; recorded as token_issued events instead.
+    __activity_log_ignore__ = frozenset({"last_used_on"})
+
     client_id: Mapped[str] = mapped_column(String(64), unique=True)  # public, random
     secret_hash: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(128))

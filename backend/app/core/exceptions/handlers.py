@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, IntegrityError, SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.activity_log import Activity, record_activity
 from app.core.exceptions.errors import AppException
 from app.core.exceptions.reporting import report_exception
 from app.core.exceptions.responses import error_response
@@ -44,6 +45,12 @@ def _handle(
         details=details,
         summary=log_summary,
     )
+    if status_code == 403:  # a refused attempt: who tried what, for the audit trail
+        record_activity(
+            Activity.ACCESS_DENIED,
+            status="failed",
+            details={"error_code": code, **(details if isinstance(details, dict) else {})},
+        )
     return error_response(
         status_code=status_code,
         code=code,

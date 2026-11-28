@@ -16,6 +16,8 @@ class ServiceCallLog(AuditMixin, Base):
     """
 
     __tablename__ = "service_call_logs"
+    # Log table: not audited by the user activity log (see app/core/activity_log.py).
+    __activity_log__ = False
 
     # Logical link to requests.id (same UUID, indexed; not an enforced foreign key).
     # NULL for calls made outside a request (startup, background jobs).

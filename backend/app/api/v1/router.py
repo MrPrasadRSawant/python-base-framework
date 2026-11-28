@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     request_logs,
     roles,
     service_call_logs,
+    user_activity_logs,
     users,
 )
 from app.core.config import settings
@@ -43,3 +44,5 @@ if settings.REQUEST_LOG_API_ENABLED:
     _protected(request_logs.router, Perm.REQUEST_LOGS_READ)
 if settings.SERVICE_CALL_LOG_API_ENABLED:
     _protected(service_call_logs.router, Perm.SERVICE_CALL_LOGS_READ)
+if settings.ENABLE_USER_ACTIVITY_LOG:
+    _protected(user_activity_logs.router, Perm.USER_ACTIVITY_LOGS_READ)

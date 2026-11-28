@@ -92,6 +92,24 @@ def next_call_order() -> int | None:
     return next(counter) if counter is not None else None
 
 
+# The current request's ASGI scope, for code deep inside a request that needs to
+# know where it came from (route, client IP), e.g. the user activity log.
+# Read-only: never mutate it. Reading the route only works once routing is done.
+_scope_ctx: ContextVar[dict[str, Any] | None] = ContextVar("request_scope", default=None)
+
+
+def get_request_scope() -> dict[str, Any] | None:
+    return _scope_ctx.get()
+
+
+def set_request_scope(scope: dict[str, Any]) -> Token:
+    return _scope_ctx.set(scope)
+
+
+def reset_request_scope(token: Token) -> None:
+    _scope_ctx.reset(token)
+
+
 def request_id_from_scope(scope: dict[str, Any]) -> str | None:
     """Request id stored on the ASGI scope, falling back to the ContextVar."""
     state = scope.get("state") or {}

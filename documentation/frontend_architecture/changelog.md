@@ -1,8 +1,14 @@
 # Changelog
 
+## 2026-11-28: User Activity (Security & audit)
+
+- Added the `audit` module and the **User Activity** page under a new **Security & audit** menu group (permission `user_activity_logs:read`): quick filter, server-side table with advanced filters, and a before/after detail dialog with Record history, All by this actor, and Open request lifecycle links.
+- Added **History** to User Management rows and **Activity history** to Role Management row menus, shown only with `user_activity_logs:read`. User Management now shows its actions column when the viewer can manage users or view activity.
+- Tests: `src/module/audit/__tests__/activity.test.js`.
+
 ## 2026-11-27: Developer monitoring and permission tools
 
-- Added Exception Analysis with severity filters, error-code frequency, summary metrics, and redacted exception detail linked to its request.
+- Added Exception Analysis with severity filters and redacted exception detail linked to its request.
 - Added Request Lifecycle reports with response-time summaries and a chronological drilldown of service calls, nested work, failures, and response timing.
 - Added Permission Management to review the catalog and assign role permissions. The Developer role can manage only permissions it already holds and cannot assign roles to users.
 

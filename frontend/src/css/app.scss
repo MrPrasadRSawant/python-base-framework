@@ -88,6 +88,9 @@ a,
   width: 100%;
   padding: clamp(20px, 2.4vw, 36px);
 }
+.app-page--dense {
+  padding: clamp(12px, 1.5vw, 24px);
+}
 
 .text-app-muted {
   color: var(--app-text-muted);

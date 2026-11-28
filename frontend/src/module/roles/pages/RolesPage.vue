@@ -84,6 +84,10 @@
                     canManage && !props.row.is_system ? 'Manage permissions' : 'View permissions'
                   }}</q-item-section>
                 </q-item>
+                <q-item v-if="canAudit" clickable @click="openHistory(props.row)">
+                  <q-item-section avatar><q-icon name="manage_history" /></q-item-section>
+                  <q-item-section>Activity history</q-item-section>
+                </q-item>
                 <q-item v-if="canManage" clickable @click="openRoleForm(props.row)">
                   <q-item-section avatar><q-icon name="edit" /></q-item-section>
                   <q-item-section>Edit details</q-item-section>
@@ -147,6 +151,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 import AppAdvancedFiltersDialog from '@/components/AppAdvancedFiltersDialog.vue'
 import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
@@ -154,6 +159,7 @@ import AppPageHeader from '@/components/AppPageHeader.vue'
 import AppStatusChip from '@/components/AppStatusChip.vue'
 import AppTable from '@/components/AppTable.vue'
 import { useNotify } from '@/composables/useNotify'
+import { ACTIVITY_PERMISSION } from '@/module/audit'
 import { useAuthStore } from '@/module/auth'
 
 import { listPermissions, rolesApi } from '../api.js'
@@ -162,9 +168,15 @@ import RolePermissionsDialog from '../components/RolePermissionsDialog.vue'
 import { buildRoleFilters, ROLE_FILTER_FIELDS } from '../filters.js'
 
 const auth = useAuthStore()
+const router = useRouter()
 const notify = useNotify()
 const table = ref(null)
 const canManage = computed(() => auth.can('roles:manage'))
+const canAudit = computed(() => auth.can(ACTIVITY_PERMISSION))
+
+function openHistory(role) {
+  router.push({ name: 'user-activity', query: { entityType: 'roles', entityId: role.id } })
+}
 const grantableCodes = computed(() => [...auth.permissions])
 
 const advancedOpen = ref(false)

@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     REQUEST_LOG_API_ENABLED: bool = False
     SERVICE_CALL_LOG_API_ENABLED: bool = False
 
+    # --- User activity log (audit trail: who changed what, sign-ins, denied access) ---
+    # One switch for the whole feature: capture + the /user-activity-logs API.
+    ENABLE_USER_ACTIVITY_LOG: bool = False
+
     # --- Pagination / search ---
     PAGINATION_DEFAULT_LIMIT: int = 20
     PAGINATION_MAX_LIMIT: int = 100

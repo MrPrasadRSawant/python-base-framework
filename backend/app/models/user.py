@@ -30,6 +30,9 @@ class User(AuditMixin, Base):
             postgresql_where=text("is_deleted = false"),
         ),
     )
+    # Sign-in bookkeeping: written on every login attempt, recorded as login /
+    # login_failed events instead of row updates (see app/core/activity_log.py).
+    __activity_log_ignore__ = frozenset({"failed_login_count", "locked_until", "last_login_on"})
 
     username: Mapped[str] = mapped_column(String(64))
     email: Mapped[str] = mapped_column(String(255))

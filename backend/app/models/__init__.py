@@ -6,6 +6,7 @@ from app.models.refresh_token import RefreshToken
 from app.models.request_log import RequestLog
 from app.models.service_call_log import ServiceCallLog
 from app.models.user import User
+from app.models.user_activity_log import UserActivityLog
 
 __all__ = [
     "ApiClient",
@@ -18,5 +19,6 @@ __all__ = [
     "RolePermission",
     "ServiceCallLog",
     "User",
+    "UserActivityLog",
     "UserRole",
 ]

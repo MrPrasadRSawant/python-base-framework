@@ -14,6 +14,8 @@ const DATE_OPERATORS = [
 
 export function operatorsFor(fieldName, fields) {
   const field = fields.find((item) => item.value === fieldName)
+  if (field?.type === 'select')
+    return TEXT_OPERATORS.filter((item) => ['eq', 'ne'].includes(item.value))
   if (field?.type === 'text') return TEXT_OPERATORS
   if (field?.type === 'boolean') return [{ label: 'Is', value: 'eq' }]
   if (field?.type === 'nullable-date') {
@@ -60,6 +62,12 @@ export function buildSearchFilters(conditions, fields) {
     if (field.type === 'boolean') {
       if (typeof condition.value !== 'boolean') throw new Error(`Choose ${field.label}.`)
       return { field: field.value, op: 'eq', value: condition.value }
+    }
+    if (field.type === 'select') {
+      if (!field.options?.some((item) => item.value === condition.value)) {
+        throw new Error(`Choose ${field.label}.`)
+      }
+      return { field: field.value, op: condition.op, value: condition.value }
     }
     if (field.type === 'date' || field.type === 'nullable-date') {
       const date = localDayStart(condition.value)

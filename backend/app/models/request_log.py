@@ -24,6 +24,8 @@ class RequestLog(AuditMixin, Base):
     """
 
     __tablename__ = "requests"
+    # Log table: not audited by the user activity log (see app/core/activity_log.py).
+    __activity_log__ = False
 
     started_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     method: Mapped[str] = mapped_column(String(16))

@@ -1,6 +1,7 @@
 <template>
-  <q-page class="app-page request-page">
+  <q-page class="app-page app-page--dense request-page">
     <AppPageHeader
+      compact
       title="Request Lifecycle"
       subtitle="Trace incoming requests, response time, and the services that ran."
     >
@@ -16,27 +17,11 @@
       </template>
     </AppPageHeader>
 
-    <div class="request-page__metrics">
-      <article class="app-card request-metric">
-        <span>Total requests</span><strong>{{ totalCount.toLocaleString() }}</strong
-        ><small>Across all pages</small>
-      </article>
-      <article class="app-card request-metric">
-        <span>Failed requests</span><strong>{{ failedCount }}</strong
-        ><small>HTTP status 400 and above</small>
-      </article>
-      <article class="app-card request-metric">
-        <span>Slow requests</span><strong>{{ slowCount }}</strong
-        ><small>At least 1 second</small>
-      </article>
-      <article class="app-card request-metric">
-        <span>Average response</span><strong>{{ formatDuration(averageDuration) }}</strong
-        ><small>Across all matching requests</small>
-      </article>
-    </div>
-
     <AppTable
       ref="table"
+      compact
+      tall
+      :page-size="20"
       :resource="requestReportsApi"
       :columns="columns"
       table-class="request-page__table"
@@ -54,6 +39,8 @@
         <q-btn
           outline
           no-caps
+          dense
+          size="sm"
           color="primary"
           icon="tune"
           label="Advanced filters"
@@ -256,7 +243,6 @@ const route = useRoute()
 const router = useRouter()
 const view = ref('all')
 const rows = ref([])
-const totalCount = ref(0)
 const traceOpen = ref(false)
 const selectedRequestId = ref('')
 const filterDialogOpen = ref(false)
@@ -345,12 +331,9 @@ const columns = [
     style: 'width: 10%',
   },
 ]
-const failedCount = computed(() => rows.value.filter((row) => row.status_code >= 400).length)
-const slowCount = computed(() => rows.value.filter((row) => row.duration_ms >= 1000).length)
 const averageDuration = ref(0)
 function onLoaded(data) {
   rows.value = data.records
-  totalCount.value = data.metadata.total_count ?? data.records.length
   averageDuration.value = data.metadata.average_duration_ms ?? 0
 }
 async function copyRequestId(requestId) {
@@ -458,26 +441,6 @@ function formatDuration(value = 0) {
 </script>
 
 <style scoped lang="scss">
-.request-page__metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--app-space-md);
-  margin-bottom: var(--app-space-md);
-}
-.request-metric {
-  display: grid;
-  gap: 6px;
-  padding: var(--app-space-md) var(--app-space-lg);
-}
-.request-metric span,
-.request-metric small {
-  color: var(--app-text-muted);
-  font-size: 12px;
-}
-.request-metric strong {
-  font-size: 27px;
-  line-height: 1;
-}
 .request-page__failure {
   max-width: 260px;
   overflow: hidden;
@@ -613,19 +576,6 @@ function formatDuration(value = 0) {
 }
 .request-page__table-hint {
   padding: 9px var(--app-space-sm);
-}
-@media (max-width: 800px) {
-  .request-page__metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 480px) {
-  .request-page__metrics {
-    grid-template-columns: 1fr 1fr;
-  }
-  .request-metric {
-    padding: var(--app-space-md);
-  }
 }
 @media (max-width: 600px) {
   .request-filter-dialog__fields {

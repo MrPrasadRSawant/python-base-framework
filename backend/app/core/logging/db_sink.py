@@ -1,5 +1,5 @@
 """Non-blocking, batched writers for the log tables
-(exception_log, request_logs, service_call_logs).
+(exception_log, request_logs, service_call_logs, user_activity_logs).
 
 Requests never wait on the database to record a log row, and a database
 outage never breaks a request:
@@ -196,7 +196,12 @@ async def _write_service_call_logs(rows: Sequence[Any]) -> None:
     await _save("app.services.service_call_log", "ServiceCallLogService", rows)
 
 
+async def _write_user_activity_logs(rows: Sequence[Any]) -> None:
+    await _save("app.services.user_activity_log", "UserActivityLogService", rows)
+
+
 exception_log_sink = DBLogSink("exception_log", _write_exception_logs)
 request_log_sink = DBLogSink("request_logs", _write_request_logs)
 service_call_log_sink = DBLogSink("service_call_logs", _write_service_call_logs)
-ALL_SINKS = (exception_log_sink, request_log_sink, service_call_log_sink)
+user_activity_log_sink = DBLogSink("user_activity_logs", _write_user_activity_logs)
+ALL_SINKS = (exception_log_sink, request_log_sink, service_call_log_sink, user_activity_log_sink)

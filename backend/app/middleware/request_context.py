@@ -23,7 +23,9 @@ from app.core.request_context import (
     parse_request_id,
     reset_call_counter,
     reset_request_id,
+    reset_request_scope,
     set_request_id,
+    set_request_scope,
     start_call_counter,
 )
 
@@ -80,8 +82,10 @@ class RequestContextMiddleware:
 
         token = set_request_id(request_id)
         counter_token = start_call_counter()  # numbers tracked service calls 1, 2, 3...
+        scope_token = set_request_scope(scope)  # route / client IP for the activity log
         try:
             await self.app(scope, receive_wrapper, send_wrapper)
         finally:
+            reset_request_scope(scope_token)
             reset_call_counter(counter_token)
             reset_request_id(token)

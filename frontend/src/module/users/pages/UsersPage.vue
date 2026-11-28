@@ -68,6 +68,19 @@
       <template #body-cell-actions="props">
         <q-td :props="props" class="users-page__actions">
           <q-btn
+            v-if="canAudit"
+            flat
+            round
+            dense
+            color="primary"
+            icon="manage_history"
+            :aria-label="`Activity history for ${props.row.full_name}`"
+            @click.stop="openHistory(props.row)"
+          >
+            <q-tooltip>Activity history</q-tooltip>
+          </q-btn>
+          <q-btn
+            v-if="canManage"
             flat
             dense
             no-caps
@@ -79,6 +92,7 @@
             @click.stop="openManageRoles(props.row)"
           />
           <q-btn
+            v-if="canManage"
             flat
             round
             dense
@@ -152,6 +166,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import AppAdvancedFiltersDialog from '@/components/AppAdvancedFiltersDialog.vue'
@@ -159,6 +174,7 @@ import AppPageHeader from '@/components/AppPageHeader.vue'
 import AppStatusChip from '@/components/AppStatusChip.vue'
 import AppTable from '@/components/AppTable.vue'
 import { useNotify } from '@/composables/useNotify'
+import { ACTIVITY_PERMISSION } from '@/module/audit'
 import { useAuthStore } from '@/module/auth'
 
 import { listRoles, usersApi } from '../api.js'
@@ -167,12 +183,14 @@ import ManageUserRolesDialog from '../components/ManageUserRolesDialog.vue'
 import { buildUserFilters, USER_FILTER_FIELDS } from '../filters.js'
 
 const auth = useAuthStore()
+const router = useRouter()
 const notify = useNotify()
 const table = ref(null)
 const advancedOpen = ref(false)
 const appliedConditions = ref([])
 const filters = computed(() => buildUserFilters(appliedConditions.value))
 const canManage = computed(() => auth.can('users:manage'))
+const canAudit = computed(() => auth.can(ACTIVITY_PERMISSION))
 const columns = computed(() => [
   { name: 'full_name', label: 'Name', field: 'full_name', align: 'left', sortable: true },
   { name: 'username', label: 'Username', field: 'username', align: 'left', sortable: true },
@@ -186,7 +204,9 @@ const columns = computed(() => [
     sortable: true,
   },
   { name: 'created_on', label: 'Created', field: 'created_on', align: 'left', sortable: true },
-  ...(canManage.value ? [{ name: 'actions', label: '', field: 'id', align: 'right' }] : []),
+  ...(canManage.value || canAudit.value
+    ? [{ name: 'actions', label: '', field: 'id', align: 'right' }]
+    : []),
 ])
 
 const createOpen = ref(false)
@@ -259,6 +279,10 @@ function isSelf(user) {
 
 function isLocked(user) {
   return Boolean(user.is_locked || (user.locked_until && new Date(user.locked_until) > new Date()))
+}
+
+function openHistory(user) {
+  router.push({ name: 'user-activity', query: { entityType: 'users', entityId: user.id } })
 }
 
 function applyFilters(conditions) {
